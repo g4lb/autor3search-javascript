@@ -1,5 +1,9 @@
+import { mkdtemp, symlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { BenchSet, UNIT_TIME } from '../src/bench/set.js'
+import { addWorktree } from '../src/gitx.js'
 import { interleave, measure } from '../src/measure.js'
 import { makeBenchRepo } from './helpers/bench-repo.js'
 
@@ -117,6 +121,49 @@ describe('measure', () => {
     })
     const { UNIT_BYTES } = await import('../src/bench/set.js')
     expect(baseSet.names().some((n) => baseSet.has(n, UNIT_BYTES))).toBe(true)
+  })
+
+  // This is the genuine real-run shape: baseDir is a pinned baseline
+  // worktree and candDir is a separate checkout of the SAME repository, at a
+  // different absolute path — exactly what src/pipeline.js hands to
+  // measure() on every real eval. The heap hint keys its observations by
+  // resolving each bench file against `dir` (see src/adapters/driver.js's
+  // measureHeap), and `dir` is baseDir on one side and candDir on the other,
+  // so a key built from the ABSOLUTE resolved path can never match across
+  // the two directories even though both name the identical benchmark. A
+  // regression here reintroduces that: every cross-directory bytes/op
+  // comparison would again come back empty.
+  it('adds matching bytes/op observations for the same benchmark across two different directories', async () => {
+    const dir = await makeBenchRepo()
+    const worktreeDir = await mkdtemp(join(tmpdir(), 'a3s-heap-worktree-'))
+    await addWorktree(dir, worktreeDir, 'HEAD')
+    // node_modules is symlinked into the fixture AFTER its initial commit
+    // (see test/helpers/bench-repo.js), so it is untracked and `git worktree
+    // add` does not carry it into the new checkout — link it in separately
+    // so Vitest is resolvable there too.
+    await symlink(join(dir, 'node_modules'), join(worktreeDir, 'node_modules'), 'dir')
+
+    const { baseSet, candSet } = await measure({
+      runner: 'vitest',
+      baseDir: worktreeDir,
+      candDir: dir,
+      benchmarks: [],
+      rounds: 2,
+      warmup: false,
+      timeoutMs: 120_000,
+      heapHint: true,
+      benchFiles: ['src/wordcount.bench.js'],
+      heapIterations: 100,
+    })
+
+    const { UNIT_BYTES } = await import('../src/bench/set.js')
+    const baseName = baseSet.names().find((n) => baseSet.has(n, UNIT_BYTES))
+    expect(baseName).toBeTruthy()
+    // The candidate must carry an observation under the EXACT SAME key, not
+    // merely some bytes/op observation somewhere — that is what a keying
+    // mismatch between the two directories would silently break.
+    expect(candSet.has(baseName, UNIT_BYTES)).toBe(true)
+    expect(candSet.values(baseName, UNIT_BYTES).length).toBeGreaterThan(0)
   })
 
   // The bench adapter's contract (src/adapters/bench/index.js, verified against

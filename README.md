@@ -291,12 +291,14 @@ Stated here rather than left for you to discover:
   never `KEEP`.
 - **`bytes/op` is an approximate hint, never scored.** V8 exposes no
   allocation counter, so it is a heap-size delta measured across a
-  forced-GC window — noisy by construction, and it can fail to line up at
-  all (in this project's own worked example above, the bytes/op comparison
-  came back unavailable for that run and was silently dropped, exactly as
-  designed: a hint that couldn't be measured must never fail a real,
-  correctly-measured experiment). It exists to point at allocation-heavy
-  code, nothing more.
+  forced-GC window — noisy by construction, since it can only see whatever
+  the GC left uncollected at the sampling point, not what was actually
+  allocated. It can also be entirely absent: the driver child needs
+  `--expose-gc`, and a bench file that fails to import or throws while
+  running is dropped from the hint rather than measured. Either way it is
+  silently omitted from the eval output rather than failing the run — a
+  hint that couldn't be measured must never fail a real, correctly-measured
+  experiment. It exists to point at allocation-heavy code, nothing more.
 - **There is no `benchtime` setting.** Coming from the Go tool, you will
   look for one. Vitest exposes no global "run this benchmark for N seconds"
   option, so per-benchmark duration lives in the `bench()` call itself (via
