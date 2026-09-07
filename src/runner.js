@@ -64,7 +64,10 @@ export class Runner {
       const timer = setTimeout(() => {
         timedOut = true
         killGroup(child.pid, 'SIGTERM')
-        killTimer = setTimeout(() => killGroup(child.pid, 'SIGKILL'), this.killGraceMs)
+        // `??=` guards against the abort path having already scheduled the
+        // escalation (both a timeout and an abort can fire for the same
+        // child); reuse that timer rather than orphaning it.
+        killTimer ??= setTimeout(() => killGroup(child.pid, 'SIGKILL'), this.killGraceMs)
         killTimer.unref()
       }, this.timeoutMs)
       timer.unref()
@@ -72,6 +75,13 @@ export class Runner {
       const onAbort = () => {
         timedOut = true
         killGroup(child.pid, 'SIGTERM')
+        // Escalate exactly as the timeout path does. Without this, a child
+        // that IGNORES SIGTERM survives the abort until the unrelated timeout
+        // timer happens to fire — measured at 12.9s with a 3s timeout, and up
+        // to the full 15m default in a real run. An abort is meant to be the
+        // fast path, so it must not depend on the slow one as its backstop.
+        killTimer ??= setTimeout(() => killGroup(child.pid, 'SIGKILL'), this.killGraceMs)
+        killTimer.unref()
       }
       opts.signal?.addEventListener('abort', onAbort, { once: true })
 
