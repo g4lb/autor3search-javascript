@@ -33,6 +33,13 @@ describe('gate', () => {
   })
 })
 
+describe('REASON', () => {
+  it('has a distinct reason for a hard link, not reusing symlink_swap', () => {
+    expect(REASON.HARDLINK_SWAP).toBe('hardlink_swap')
+    expect(REASON.HARDLINK_SWAP).not.toBe(REASON.SYMLINK_SWAP)
+  })
+})
+
 describe('decide — keeping', () => {
   it('keeps a real, significant improvement', () => {
     const r = decide(input())

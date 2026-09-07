@@ -23,6 +23,18 @@ export const ERR_SYMLINK = 'A3S_SYMLINK'
 export const ERR_STORE_TAMPERED = 'A3S_STORE_TAMPERED'
 
 /**
+ * `.code` on an error raised by a HARD link at a frozen path.
+ *
+ * A hard link defeats the symlink defence entirely: `lstat().isSymbolicLink()`
+ * is false for one, so the path looks like an ordinary regular file. Writing
+ * to it writes to every other name for that inode — so an agent can point a
+ * frozen path at any file it may write and have `restore` clobber it with
+ * test source. That is an uncontrolled write outside the repository, which is
+ * exactly what this module exists to prevent.
+ */
+export const ERR_HARD_LINK = 'A3S_HARD_LINK'
+
+/**
  * Copies each file into storeDir and records its hash.
  *
  * @param {string} repoRoot
@@ -43,6 +55,7 @@ export async function snapshot(repoRoot, storeDir, files) {
     const content = await readFile(src)
     const dst = safeJoin(storeDir, rel, 'snapshot')
     await mkdir(dirname(dst), { recursive: true })
+    await refuseHardLink(dst, rel, 'snapshot', 'inside the frozen store')
     await writeFile(dst, content)
     manifest.files[rel] = hash(content)
   }
@@ -86,6 +99,7 @@ export async function restore(repoRoot, storeDir, manifest) {
     }
 
     await mkdir(dirname(dst), { recursive: true })
+    await refuseHardLink(dst, rel, 'restore', 'in the repository')
     await writeFile(dst, golden)
     changed.push(rel)
   }
@@ -189,6 +203,27 @@ async function symlinkComponent(root, rel) {
     if (stats?.isSymbolicLink()) return parts.slice(0, i + 1).join('/')
   }
   return null
+}
+
+/**
+ * Throws when the destination is a hard link — a file with more than one name.
+ *
+ * Checked immediately before every write, on both the working tree and the
+ * store. A regular file in a checkout has exactly one link; more than one
+ * means writing here also writes somewhere else, potentially outside the
+ * repository. Only an existing regular file is examined: a path that does not
+ * exist yet cannot be linked, and a directory's link count is unrelated.
+ */
+async function refuseHardLink(path, rel, op, where) {
+  const stats = await lstat(path).catch(() => null)
+  if (stats?.isFile() && stats.nlink > 1) {
+    throw tagged(
+      `${op} ${rel}: ${rel} has ${stats.nlink} names (a hard link) ${where}; refusing to write through ` +
+        `it, because that would also overwrite the other name(s) for this file — possibly outside the ` +
+        `repository. Replace it with a regular file and rerun.`,
+      ERR_HARD_LINK,
+    )
+  }
 }
 
 /** Builds an Error carrying a stable `.code` the pipeline branches on. */

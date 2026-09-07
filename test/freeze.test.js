@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { ERR_STORE_TAMPERED, ERR_SYMLINK, loadManifest, restore, saveManifest, snapshot, verify } from '../src/freeze.js'
+import { ERR_HARD_LINK, ERR_STORE_TAMPERED, ERR_SYMLINK, loadManifest, restore, saveManifest, snapshot, verify } from '../src/freeze.js'
 import { writeFiles } from './helpers/repo.js'
 
 let repo, store
@@ -138,5 +138,69 @@ describe('manifest persistence', () => {
 
   it('errors clearly when the manifest is missing', async () => {
     await expect(loadManifest(join(store, 'nope.json'))).rejects.toThrow(/read manifest/)
+  })
+})
+
+describe('hard links', () => {
+  it('refuses to restore through a hard link, leaving the outside file intact', async () => {
+    await seed()
+    const m = await snapshot(repo, store, files)
+    const outside = join(repo, '..', 'outside-target.txt')
+    await writeFile(outside, 'do not clobber\n')
+    await rm(join(repo, 'src/a.test.js'))
+    await link(outside, join(repo, 'src/a.test.js'))
+    await expect(restore(repo, store, m)).rejects.toMatchObject({ code: ERR_HARD_LINK })
+    expect(await readFile(outside, 'utf8')).toBe('do not clobber\n')
+  })
+
+  it('refuses to snapshot into a hard-linked store entry', async () => {
+    await seed()
+    const outside = join(repo, '..', 'outside-store.txt')
+    await writeFile(outside, 'do not clobber\n')
+    await mkdir(join(store, 'src'), { recursive: true })
+    await link(outside, join(store, 'src/a.test.js'))
+    await expect(snapshot(repo, store, files)).rejects.toMatchObject({ code: ERR_HARD_LINK })
+    expect(await readFile(outside, 'utf8')).toBe('do not clobber\n')
+  })
+
+  it('allows an ordinary single-link file', async () => {
+    await seed()
+    const m = await snapshot(repo, store, files)
+    await writeFile(join(repo, 'src/a.test.js'), 'edited\n')
+    expect(await restore(repo, store, m)).toEqual(['src/a.test.js'])
+  })
+})
+
+describe('deeper symlink attacks', () => {
+  it('refuses a symlink two directories up from the frozen file', async () => {
+    await writeFiles(repo, { 'a/b/c.test.js': 'original\n' })
+    const m = await snapshot(repo, store, ['a/b/c.test.js'])
+    await rm(join(repo, 'a'), { recursive: true })
+    await mkdir(join(repo, 'elsewhere', 'b'), { recursive: true })
+    await writeFile(join(repo, 'elsewhere/b/c.test.js', ), 'planted\n')
+    await symlink(join(repo, 'elsewhere'), join(repo, 'a'))
+    await expect(restore(repo, store, m)).rejects.toMatchObject({ code: ERR_SYMLINK })
+    expect(await readFile(join(repo, 'elsewhere/b/c.test.js'), 'utf8')).toBe('planted\n')
+  })
+
+  it('refuses a symlinked directory inside the store', async () => {
+    await seed()
+    const m = await snapshot(repo, store, files)
+    await writeFile(join(repo, 'src/a.test.js'), 'edited\n')
+    const decoy = join(repo, '..', 'decoy')
+    await mkdir(decoy, { recursive: true })
+    await rm(join(store, 'src'), { recursive: true })
+    await symlink(decoy, join(store, 'src'))
+    await expect(restore(repo, store, m)).rejects.toMatchObject({ code: ERR_SYMLINK })
+  })
+})
+
+describe('non-file frozen paths', () => {
+  it('fails rather than writing when a directory sits where a frozen file belongs', async () => {
+    await seed()
+    const m = await snapshot(repo, store, files)
+    await rm(join(repo, 'src/a.test.js'))
+    await mkdir(join(repo, 'src/a.test.js'), { recursive: true })
+    await expect(restore(repo, store, m)).rejects.toThrow()
   })
 })
