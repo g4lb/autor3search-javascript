@@ -67,4 +67,48 @@ describe('createMatcher', () => {
     const m = createMatcher(['src/**'])
     expect(m.match('src\\a\\b.js')).toBe(true)
   })
+
+  it('never matches a Windows-style or UNC absolute path', () => {
+    const m = createMatcher(['**'])
+    expect(m.match('C:/Windows/system32')).toBe(false)
+    expect(m.match('C:\\Windows\\system32')).toBe(false)
+    expect(m.match('\\\\server\\share\\x.js')).toBe(false)
+    expect(m.match('//etc/passwd')).toBe(false)
+  })
+
+  it('never matches a backslash-spelled escape', () => {
+    const m = createMatcher(['**'])
+    expect(m.match('a\\..\\..\\outside.js')).toBe(false)
+    expect(m.match('src\\..\\..\\outside.js')).toBe(false)
+  })
+
+  it('still matches a path whose .. stays inside the root', () => {
+    // False rejects are safe but annoying; this one must not be rejected.
+    expect(createMatcher(['src/**']).match('src/a/../b.js')).toBe(true)
+  })
+
+  it('does not let a wildcard reach dot-files or dot-directories', () => {
+    // Otherwise an agent scoped to the whole repository could write .npmrc or
+    // .github/workflows/*.yml and have the edit accepted.
+    const m = createMatcher(['**'])
+    expect(m.match('.npmrc')).toBe(false)
+    expect(m.match('.github/workflows/ci.yml')).toBe(false)
+    expect(m.match('src/.env')).toBe(false)
+  })
+
+  it('matches a dot path when the pattern names it explicitly', () => {
+    expect(createMatcher(['.github/**']).match('.github/workflows/ci.yml')).toBe(true)
+  })
+
+  it('matches nothing for an empty or absent pattern list', () => {
+    expect(createMatcher([]).match('src/a.js')).toBe(false)
+    expect(createMatcher(null).match('src/a.js')).toBe(false)
+    expect(createMatcher(undefined).match('src/a.js')).toBe(false)
+  })
+
+  it('throws on a non-array pattern list rather than degrading silently', () => {
+    // A bare string would be iterated character by character, turning "**"
+    // into two one-character patterns without a word of complaint.
+    expect(() => createMatcher('src/**')).toThrow(/must be an array/)
+  })
 })

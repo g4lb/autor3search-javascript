@@ -19,12 +19,27 @@ import picomatch from 'picomatch'
  * @returns {{ match(rel: string): boolean }}
  */
 export function createMatcher(patterns) {
+  if (patterns != null && !Array.isArray(patterns)) {
+    // A bare string would be iterated CHARACTER BY CHARACTER by the loop
+    // below, silently degrading "**" into two one-character patterns. A
+    // security gate must fail closed and loudly, not quietly narrow itself.
+    throw new TypeError(`scope patterns must be an array, got ${typeof patterns}`)
+  }
+
   const compiled = []
   for (const raw of patterns ?? []) {
     if (typeof raw !== 'string') continue
     const trimmed = raw.trim()
     if (trimmed === '') continue
-    compiled.push(picomatch(normalisePattern(trimmed), { dot: true }))
+    // dot is deliberately LEFT OFF. With `dot: true`, the default "**" would
+    // also match dot-files and dot-directories, so an agent scoped to the
+    // whole repository could write .npmrc (redirecting the package registry)
+    // or .github/workflows/*.yml (arbitrary CI execution) and have the change
+    // accepted. The go tool this ports from ignores dot-directories for the
+    // same reason. A user who genuinely wants one in scope names it
+    // explicitly — picomatch still matches a literal dot written in the
+    // pattern, so `scope: [".github/**"]` works while `**` does not reach it.
+    compiled.push(picomatch(normalisePattern(trimmed)))
   }
 
   return {
