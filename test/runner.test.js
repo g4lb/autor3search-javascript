@@ -129,6 +129,27 @@ describe('Runner', () => {
     expect(() => process.kill(grandchild, 0)).toThrow()
   })
 
+  it('escalates to SIGKILL when an aborted child ignores SIGTERM', async () => {
+    // The abort path is the FAST path; it must not rely on the unrelated
+    // timeout timer as its backstop. Measured at 12.9s before this fix.
+    const controller = new AbortController()
+    const script = `
+      process.on('SIGTERM', () => {})
+      setInterval(() => {}, 1000)
+    `
+    const started = Date.now()
+    const promise = new Runner(process.cwd(), 60_000, null, { killGraceMs: 400 }).run(
+      process.execPath,
+      ['-e', script],
+      { signal: controller.signal },
+    )
+    setTimeout(() => controller.abort(), 200)
+    const r = await promise
+    expect(r.ok()).toBe(false)
+    // 60s timeout, so anything near it means the abort fell through to the timeout.
+    expect(Date.now() - started).toBeLessThan(5000)
+  })
+
   it('reports a signal-killed child as failed, never as success', async () => {
     // Node gives exitCode null for a signal death; ok() must not read that as 0.
     const r = await new Runner(process.cwd(), 300, null, { killGraceMs: 400 }).run(process.execPath, [
