@@ -89,10 +89,22 @@ unit the scoring core works in.
 In this capture, every benchmark's `samples` array is `[]`, even though the
 summary table printed to the terminal (and `sampleCount`) shows hundreds of
 thousands of underlying iterations. Tinybench does not retain raw samples in
-the JSON report by default. `parseVitestBench` therefore relies on `median`
-(falling back to `mean`, and only as a last resort to a median computed over
-`samples`, which in practice will rarely if ever be reached from a real
-Vitest capture) rather than assuming `samples` is populated.
+the JSON report by default. `parseVitestBench` relies on `median` alone (see
+below for why there is no fallback).
+
+## Traced: why `samples` is always empty (and why there is no samples fallback)
+
+Vitest 2.1.9's own source confirms this is not incidental. In
+`node_modules/vitest/dist/chunks/index.DsZFoqi9.js`, the function
+`createFormattedBenchmarkReport` builds each benchmark entry with
+`benchmarks.push({ id: t.id, ...benchmark, samples: [] })` — it hardcodes
+`samples: []` unconditionally, ignoring `benchmark.includeSamples`. This was
+also confirmed empirically: setting `includeSamples: true` in the bench
+config still yields `samples: []` in the `--outputJson` file. Because of
+this, `parseVitestBench`'s `timingMs` has **no** samples-based fallback (and,
+for a related but distinct reason, no `mean` fallback either — see the doc
+comment on `timingMs` in `src/bench/parse.js`): it reads `median` only, and
+throws, naming the benchmark, if that field is missing.
 
 ## Re-capturing
 
