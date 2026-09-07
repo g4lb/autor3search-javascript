@@ -319,3 +319,124 @@ function erfc(x) {
   const result = t * Math.exp(-z * z + 0.5 * (coefficients[0] + ty * d) - dd)
   return x >= 0 ? result : 2 - result
 }
+
+/**
+ * @typedef {object} Delta
+ * @property {string} name
+ * @property {string} unit
+ * @property {number} baseCenter median of the baseline observations
+ * @property {number} candCenter median of the candidate observations
+ * @property {number} ratio candCenter / baseCenter; below 1 is faster
+ * @property {number} pctChange (ratio - 1) * 100
+ * @property {number} p Mann-Whitney two-sided p-value
+ * @property {number} alpha rejection threshold, uncorrected
+ * @property {boolean} significant p < alpha, with NO multiple-comparison correction
+ * @property {number} nBase
+ * @property {number} nCand
+ * @property {string[]} warnings
+ */
+
+/**
+ * Compares one benchmark's unit across two measurement sets.
+ *
+ * `significant` here always means "significant at the raw, uncorrected
+ * alpha". That is the honest statistic a human or an agent should read. A
+ * Bonferroni correction that gates a keep/reject decision is applied
+ * elsewhere, on top of this — it is a decision threshold, not a
+ * redefinition of the word.
+ *
+ * @param {import('./set.js').BenchSet} base
+ * @param {import('./set.js').BenchSet} cand
+ * @param {string} name
+ * @param {string} unit
+ * @returns {Delta}
+ */
+export function compare(base, cand, name, unit) {
+  const bv = base.values(name, unit)
+  if (!bv) throw new Error(`baseline has no ${unit} for ${name}`)
+  const cv = cand.values(name, unit)
+  if (!cv) throw new Error(`candidate has no ${unit} for ${name}`)
+  if (bv.length < 2 || cv.length < 2) {
+    throw new Error(`${name}: need at least 2 observations per side, got ${bv.length}/${cv.length}`)
+  }
+
+  const bSum = summary(bv)
+  const cSum = summary(cv)
+  if (bSum.center === 0) {
+    throw new Error(`${name}: baseline ${unit} median is zero, cannot form a ratio`)
+  }
+  const test = mannWhitneyU(bv, cv)
+  const ratio = cSum.center / bSum.center
+
+  return {
+    name,
+    unit,
+    baseCenter: bSum.center,
+    candCenter: cSum.center,
+    ratio,
+    pctChange: (ratio - 1) * 100,
+    p: test.p,
+    alpha: ALPHA,
+    significant: test.p < ALPHA,
+    nBase: test.n1,
+    nCand: test.n2,
+    // Deduplicated: the two summaries warn about the same sample size in the
+    // same words, and printing that twice per benchmark buries the distinct
+    // warnings among duplicates.
+    warnings: [...new Set([...bSum.warnings, ...cSum.warnings, ...test.warnings])],
+  }
+}
+
+/**
+ * Compares every benchmark present in both sets, sorted by name.
+ *
+ * Strict in one direction: a benchmark measured at baseline but missing from
+ * the candidate is an error, not a skip. A benchmark that disappears cannot
+ * be checked for regressions — which is exactly how an agent would hide one.
+ * A benchmark the candidate added is ignored rather than an error, because a
+ * new benchmark cannot have regressed against a baseline that never ran it.
+ *
+ * @param {import('./set.js').BenchSet} base
+ * @param {import('./set.js').BenchSet} cand
+ * @param {string} unit
+ * @returns {Delta[]}
+ */
+export function compareAll(base, cand, unit) {
+  const out = []
+  const missing = []
+  for (const name of base.names()) {
+    if (!base.has(name, unit)) continue
+    if (!cand.has(name, unit)) {
+      missing.push(name)
+      continue
+    }
+    out.push(compare(base, cand, name, unit))
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `benchmark(s) measured at baseline but missing from the candidate: ${missing.sort().join(', ')} — ` +
+        `a benchmark that disappears cannot be checked for regressions`,
+    )
+  }
+  if (out.length === 0) throw new Error('no benchmark appears in both baseline and candidate')
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+}
+
+/**
+ * The geometric mean of the deltas' ratios — the single score the agent
+ * optimizes. Below 1 is an overall speedup.
+ *
+ * Computed in log space so a long list of small ratios cannot underflow.
+ *
+ * @param {Delta[]} deltas
+ * @returns {number}
+ */
+export function geoMean(deltas) {
+  if (deltas.length === 0) throw new Error('geoMean of an empty delta set')
+  let sum = 0
+  for (const d of deltas) {
+    if (!(d.ratio > 0)) throw new Error(`${d.name}: non-positive ratio ${d.ratio}`)
+    sum += Math.log(d.ratio)
+  }
+  return Math.exp(sum / deltas.length)
+}
