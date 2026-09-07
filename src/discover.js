@@ -70,7 +70,7 @@ export async function benchmarks(root) {
       ast = parse(await readFile(join(root, rel), 'utf8'), {
         sourceType: 'unambiguous',
         errorRecovery: false,
-        plugins: ['typescript', 'jsx', 'decorators-legacy', 'importAttributes'],
+        plugins: pluginsFor(rel),
       })
     } catch {
       // An unparseable bench file is not fatal to discovery. `init` reporting
@@ -116,6 +116,23 @@ function collect(nodes, prefix, emit) {
       }
     }
   }
+}
+
+/**
+ * The Babel plugins to parse one file with, keyed by extension.
+ *
+ * `jsx` must NOT be enabled for a plain `.ts` file. There, `<number>value` is
+ * a legacy type assertion, but with `jsx` on, Babel reads it as an unclosed
+ * JSX element and the whole file fails to parse — so its benchmarks silently
+ * vanish from discovery. TypeScript itself forbids JSX syntax in `.ts` for
+ * exactly this ambiguity, which is why `.tsx` exists, so keying on the
+ * extension costs nothing and cannot regress a legitimate construct.
+ */
+function pluginsFor(rel) {
+  const common = ['decorators-legacy', 'importAttributes']
+  if (/\.(mts|cts|ts)$/.test(rel)) return ['typescript', ...common]
+  if (rel.endsWith('.tsx')) return ['typescript', 'jsx', ...common]
+  return ['jsx', ...common]
 }
 
 /** Unwraps an expression statement into its call expression, if it is one. */

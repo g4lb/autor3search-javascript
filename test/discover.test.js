@@ -104,6 +104,41 @@ bench.skip('skipped', () => {})
     })
     expect((await benchmarks(dir)).map((b) => b.path)).toEqual(['alpha', 'zeta'])
   })
+
+  it('finds a benchmark in a .ts file using a legacy angle-bracket cast', async () => {
+    // `<number>value` is a type assertion in .ts, but Babel with the jsx
+    // plugin reads it as an unclosed JSX element and the file fails to parse,
+    // silently dropping its benchmarks from discovery.
+    await writeFiles(dir, {
+      'a.bench.ts': `import { bench } from 'vitest'
+const raw: unknown = 1
+const n = <number>raw
+bench('cast', () => n)
+`,
+    })
+    expect(baseNames(await benchmarks(dir))).toEqual(['cast'])
+  })
+
+  it('still parses JSX in .tsx and .jsx files', async () => {
+    await writeFiles(dir, {
+      'a.bench.tsx': `import { bench } from 'vitest'\nbench('tsx', () => <div />)\n`,
+      'b.bench.jsx': `import { bench } from 'vitest'\nbench('jsx', () => <span />)\n`,
+    })
+    expect(baseNames(await benchmarks(dir))).toEqual(['jsx', 'tsx'])
+  })
+
+  it('does not follow a symlinked directory', async () => {
+    const { symlink, mkdir } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    await writeFiles(dir, { 'real/x.bench.js': `import { bench } from 'vitest'\nbench('real', () => {})\n` })
+    await mkdir(join(dir, 'outside'), { recursive: true })
+    await writeFiles(dir, { 'outside/y.bench.js': `import { bench } from 'vitest'\nbench('outside', () => {})\n` })
+    await symlink(join(dir, 'outside'), join(dir, 'linked'))
+    // `outside/` is walked directly, but `linked/` must not be descended, so
+    // its benchmark appears exactly once rather than twice.
+    const found = (await benchmarks(dir)).filter((b) => b.name === 'outside')
+    expect(found).toHaveLength(1)
+  })
 })
 
 describe('frozenFiles', () => {
@@ -126,5 +161,10 @@ describe('frozenFiles', () => {
     await writeFiles(dir, { 'a.bench.js': '\n', 'b.test.js': '\n' })
     expect(await benchFiles(dir)).toEqual(['a.bench.js'])
     expect(await testFiles(dir)).toEqual(['b.test.js'])
+  })
+
+  it('classifies a .bench.test.js file once, as a test', async () => {
+    await writeFiles(dir, { 'a.bench.test.js': '\n' })
+    expect(await frozenFiles(dir)).toEqual(['a.bench.test.js'])
   })
 })
