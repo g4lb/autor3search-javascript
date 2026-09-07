@@ -96,18 +96,58 @@ export async function runProfiled(dir, opts) {
         `--heap-prof-dir=${scratch}`,
       ],
     })
-    // V8 names the profiles after a timestamp and the pid; rename them to
-    // stable paths so `profile` can print a filename a human can act on.
+    // V8 names the profiles after a timestamp and pid — verified on Node
+    // 22.23.1 as `CPU.<timestamp>.<pid>.0.001.cpuprofile` and
+    // `Heap.<timestamp>.<pid>.0.002.heapprofile`. There is NO fixed filename to
+    // predict, so they are matched by extension.
+    //
+    // CRUCIALLY, there is more than one of each. `module.register` runs the
+    // resolve hooks on their own thread, and --cpu-prof/--heap-prof profile
+    // that thread too — so a run yields both the MAIN thread's profile (the
+    // benchmark frames we want) and the LOADER thread's (module-resolution
+    // internals, no user code at all). Taking whichever readdir happened to
+    // return last picked the loader's profile in 3 of 3 trials, handing back a
+    // perfectly valid, non-empty profile containing ZERO frames of the
+    // benchmarked code.
+    //
+    // Content-based heuristics were tried and rejected: CPU sample count
+    // discriminated correctly in every trial run during verification, but the
+    // equivalent heap "most tree nodes" heuristic FLIPPED between trials (the
+    // main thread's heap-prof tree was sometimes smaller than the loader
+    // thread's, since heap-prof sampling is allocation-triggered and its yield
+    // is luck-of-the-draw, not proportional to "is this the thread that ran
+    // the benchmark"). So instead this parses the filename's thread-id field:
+    // Node names each profile `<Kind>.<date>.<time>.<pid>.<threadId>.<seq>.<ext>`,
+    // and the main thread's threadId is always 0 — a structural guarantee
+    // (`node:worker_threads` documents `threadId === 0` off the main thread),
+    // not an empirical proxy. Verified across 5 trials: the threadId-0 file is
+    // the one containing `driver-child.js`/benchmark frames in every case.
     const written = await readdir(scratch)
     const out = { cpuProfile: join(opts.outDir, 'cpu.cpuprofile'), heapProfile: join(opts.outDir, 'heap.heapprofile') }
-    for (const name of written) {
-      if (name.endsWith('.cpuprofile')) await rename(join(scratch, name), out.cpuProfile)
-      else if (name.endsWith('.heapprofile')) await rename(join(scratch, name), out.heapProfile)
-    }
+    const cpu = mainThreadFile(written, '.cpuprofile')
+    const heap = mainThreadFile(written, '.heapprofile')
+    if (cpu) await rename(join(scratch, cpu), out.cpuProfile)
+    if (heap) await rename(join(scratch, heap), out.heapProfile)
     return out
   } finally {
     await rm(scratch, { recursive: true, force: true })
   }
+}
+
+/**
+ * Of several profile files V8 wrote for one run, picks the one written by the
+ * MAIN thread — see the long comment in runProfiled for why this can't be a
+ * content heuristic. Falls back to the alphabetically-first file (still
+ * deterministic) on the Node versions this was verified against, every
+ * profile filename carries the thread-id field, so the fallback is not
+ * expected to trigger in practice.
+ */
+function mainThreadFile(names, extension) {
+  const candidates = names
+    .filter((n) => n.endsWith(extension))
+    .map((n) => ({ name: n, threadId: n.split('.').at(-3) }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+  return (candidates.find((c) => c.threadId === '0') ?? candidates[0])?.name ?? null
 }
 
 /** Spawns the driver child and parses its single JSON object. */
