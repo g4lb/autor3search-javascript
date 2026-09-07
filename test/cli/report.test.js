@@ -100,4 +100,25 @@ describe('report', () => {
     expect(out).toMatch(/total\s+2/)
     expect(out).toContain(longDesc)
   })
+
+  it('does not let a prototype-chain status name corrupt the counters', async () => {
+    // `status in counts` is true for toString/constructor/hasOwnProperty even
+    // though no such counter exists — results.tsv is written by the harness
+    // but read back from a file a human can edit.
+    const dir = await withRows(
+      'a\t0.90\t-10\t0\tkeep\treal win\n' +
+        'b\t1.00\t0\t0\ttoString\tprototype name\n' +
+        'c\t1.00\t0\t0\tconstructor\tprototype name\n' +
+        'd\t1.00\t0\t0\t__proto__\tprototype name\n' +
+        'e\t1.00\t0\t0\thasOwnProperty\tprototype name\n',
+    )
+    const { code, out } = await runCli(['report', '-C', dir])
+    expect(code).toBe(0)
+    expect(out).toMatch(/keep\s+1/)
+    expect(out).toMatch(/other\s+4/)
+    expect(out).toMatch(/total\s+5/)
+    // The kept row's own score must be the cumulative — the four odd rows
+    // must not have been counted as keeps.
+    expect(out).toMatch(/0\.9000/)
+  })
 })
