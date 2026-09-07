@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { UNIT_BYTES } from '../../src/bench/set.js'
@@ -96,5 +96,22 @@ describe('runProfiled', () => {
     expect(written.some((f) => f.endsWith('.cpuprofile'))).toBe(true)
     expect(written.some((f) => f.endsWith('.heapprofile'))).toBe(true)
     expect(out.cpuProfile).toContain(outDir)
+  })
+
+  it('returns the main thread profile, not the module-loader thread profile', async () => {
+    // --cpu-prof profiles the module.register loader thread too. Its profile
+    // is valid, non-empty and contains no user code at all, so picking the
+    // wrong one yields a confident hot-spot table for Node's module loader.
+    const dir = await makeBenchRepo()
+    const outDir = join(dir, '.autor3search', 'profiles', 'wordcount')
+    const out = await runProfiled(dir, {
+      ...base,
+      benchFiles: ['src/wordcount.bench.js'],
+      outDir,
+      iterations: 200,
+    })
+    const cpu = JSON.parse(await readFile(out.cpuProfile, 'utf8'))
+    const urls = cpu.nodes.map((n) => n.callFrame?.url ?? '').join('\n')
+    expect(urls).toMatch(/wordcount/)
   })
 })
