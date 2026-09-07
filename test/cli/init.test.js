@@ -1,10 +1,12 @@
 import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { parse as parseYaml } from 'yaml'
 import { runCli } from '../helpers/cli.js'
 import { makeBenchRepo } from '../helpers/bench-repo.js'
 import { makeRepo, writeFiles } from '../helpers/repo.js'
+import { REASON, STATUS, exitCode } from '../../src/verdict.js'
 
 const read = (dir, rel) => readFile(join(dir, rel), 'utf8')
 
@@ -96,5 +98,36 @@ describe('init', () => {
     const { out } = await runCli(['init', '-C', dir])
     expect(out).toContain('src/extra.bench.js')
     expect(out).toContain('extra')
+  })
+})
+
+describe('program.md stays in sync with the code it documents', () => {
+  // program.md is a frozen contract: the agent's loop branches on these exact
+  // reason and status strings, and the file is copied verbatim into the
+  // user's repo. Renaming or adding a code in src/verdict.js must break this
+  // test, not silently desync the prose an unattended agent reads all night.
+  const template = () => readFile(fileURLToPath(new URL('../../templates/program.md', import.meta.url)), 'utf8')
+
+  it('documents exactly the reason codes verdict.js defines, no more and no fewer', async () => {
+    const text = await template()
+    // Scoped to the one paragraph that enumerates the codes, not the whole
+    // document, so this can assert set equality in both directions without
+    // tripping over unrelated backticked words (file names, config keys,
+    // command names) that appear elsewhere in the file.
+    const match = text.match(/`reason` is a stable machine-readable code: ([\s\S]*?)\.\n/)
+    expect(match, 'could not find the reason-code paragraph in program.md').toBeTruthy()
+    const documented = new Set([...match[1].matchAll(/`([a-z_]+)`/g)].map((m) => m[1]))
+    expect(documented).toEqual(new Set(Object.values(REASON)))
+  })
+
+  it('documents every exit code verdict.js can return', async () => {
+    const text = await template()
+    for (const status of [STATUS.KEEP, STATUS.DISCARD, STATUS.FAIL, STATUS.CRASH]) {
+      expect(text).toContain(status)
+    }
+    // ABORTED is not a verdict but the agent must be told how it arrives.
+    expect(text).toContain(STATUS.ABORTED)
+    expect(exitCode({ status: STATUS.ABORTED })).toBe(2)
+    expect(exitCode({ status: 'NOT_A_REAL_STATUS' })).toBe(2)
   })
 })
