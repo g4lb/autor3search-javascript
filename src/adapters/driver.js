@@ -10,7 +10,7 @@
  */
 import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve as resolvePath } from 'node:path'
+import { dirname, join, relative, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BenchSet, UNIT_BYTES } from '../bench/set.js'
 import { Runner } from '../runner.js'
@@ -66,7 +66,13 @@ export async function measureHeap(dir, opts) {
   }
   for (const r of payload?.results ?? []) {
     if (r.bytesPerOp === null) continue
-    set.record(`${r.file} > ${r.path}`, r.name, UNIT_BYTES, r.bytesPerOp)
+    // Key on a path RELATIVE to `dir`, never the absolute one. `dir` is the
+    // pinned baseline worktree for one side and the repository root for the
+    // other, so absolute keys can never match across the two and every
+    // cross-directory comparison silently produced no hint at all. The time
+    // path avoids this only because Vitest's own report yields root-relative
+    // names — see taskPath in src/bench/parse.js — so this mirrors it.
+    set.record(`${relative(dir, r.file)} > ${r.path}`, r.name, UNIT_BYTES, r.bytesPerOp)
   }
   return set
 }

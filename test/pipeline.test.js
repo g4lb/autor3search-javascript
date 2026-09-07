@@ -205,4 +205,24 @@ describe('evalOnce — measurement', () => {
     const { measurements } = await run(ctx)
     expect(measurements.time.every((d) => d.unit === 'sec/op')).toBe(true)
   })
+
+  // This is the real cross-directory shape the bytes/op hint is measured
+  // under: baseDir is the pinned baseline worktree (join(stateDir,
+  // WORKTREE_NAME)) and candDir is the repository root (ctx.root) — two
+  // different absolute paths for the same tree. Before the fix in
+  // src/adapters/driver.js, measureHeap keyed each observation by the
+  // ABSOLUTE resolved bench file path, which differs on the two sides and so
+  // compareAll(UNIT_BYTES) always threw "missing from the candidate" —
+  // silently degrading measurements.bytes to null on every real run. This
+  // asserts the hint actually SURVIVES that real shape, not merely that a
+  // missing hint cannot break the verdict.
+  it('produces a real bytes/op delta across the baseline worktree and the repo root', async () => {
+    const ctx = await setup({ heapHint: true })
+    await commitFiles(ctx.root, { 'src/wordcount.js': FAST_WORDCOUNT })
+    const { measurements } = await run(ctx)
+    expect(measurements.bytes).not.toBeNull()
+    expect(measurements.bytes.length).toBeGreaterThan(0)
+    expect(measurements.bytes.some((d) => d.name.includes('countWords'))).toBe(true)
+    expect(measurements.bytes.every((d) => d.unit === 'bytes/op')).toBe(true)
+  })
 })
