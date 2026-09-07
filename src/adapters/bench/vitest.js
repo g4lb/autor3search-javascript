@@ -70,6 +70,13 @@ async function run(dir, opts) {
       )
     }
 
+    // A bench body that throws at CALL time is NOT caught above: Vitest exits
+    // 0 for it and writes a report with zeros and no `median`. It is caught
+    // here instead, because parseVitestBench accepts only tinybench's median
+    // and refuses anything else. That coupling is deliberate and load-bearing
+    // — if a timing fallback were ever reintroduced in the parser, a
+    // half-failed benchmark would start being scored as a real measurement.
+    // test/adapters/vitest.test.js pins this.
     let parsed
     try {
       parsed = parseVitestBench(report)
