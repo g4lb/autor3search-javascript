@@ -78,6 +78,33 @@ describe('summary', () => {
   it('rejects an empty sample', () => {
     expect(() => summary([])).toThrow(/at least one observation/)
   })
+
+  it('stays correct past the point where 2**n overflows', () => {
+    // A direct binom(n,k)/2**n loop returns Infinity then NaN from n=1024 up,
+    // exits early on the NaN comparison, and reports a far-too-wide interval
+    // with no warning at all.
+    const values = Array.from({ length: 2000 }, (_, i) => i)
+    const s = summary(values)
+    expect(s.warnings).toEqual([])
+    expect(s.lo).toBe(955)
+    expect(s.hi).toBe(2000 - 1 - 955)
+    expect(Number.isFinite(s.hi - s.lo)).toBe(true)
+  })
+
+  it('keeps the interval tightening all the way up', () => {
+    const width = (n) => {
+      const s = summary(Array.from({ length: n }, (_, i) => i))
+      return (s.hi - s.lo) / n
+    }
+    // As a FRACTION of the sample, the interval must keep shrinking.
+    expect(width(2000)).toBeLessThan(width(200))
+    expect(width(200)).toBeLessThan(width(20))
+  })
+
+  it('needs more observations at 99% confidence than at 95%', () => {
+    expect(summary([1, 2, 3, 4, 5, 6], 0.99).lo).toBe(-Infinity)
+    expect(summary([1, 2, 3, 4, 5, 6, 7, 8], 0.99).lo).toBe(1)
+  })
 })
 
 describe('minAchievableP', () => {
