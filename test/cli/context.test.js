@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import * as gitx from '../../src/gitx.js'
-import { loadRepoConfig, resolveRepo, resolveRun } from '../../src/cli/context.js'
+import { expandSingleDashFlags, loadRepoConfig, resolveRepo, resolveRun } from '../../src/cli/context.js'
 import { STATE_HOME_ENV } from '../../src/state/index.js'
 import { makeRepo, writeFiles } from '../helpers/repo.js'
 
@@ -80,5 +80,24 @@ describe('loadRepoConfig', () => {
     const dir = await makeRepo()
     await writeFiles(dir, { '.autor3search/config.yaml': 'count: 8\n' })
     expect((await loadRepoConfig(dir)).count).toBe(8)
+  })
+})
+
+describe('expandSingleDashFlags', () => {
+  it('rewrites a documented single-dash flag into the form parseArgs accepts', () => {
+    expect(expandSingleDashFlags(['-tag', 'sep7'], ['tag'])).toEqual(['--tag', 'sep7'])
+  })
+
+  it('leaves single-character flags and long forms alone', () => {
+    expect(expandSingleDashFlags(['-C', '/tmp', '--tag', 'x'], ['tag'])).toEqual(['-C', '/tmp', '--tag', 'x'])
+  })
+
+  it('does not rewrite a VALUE that looks like a flag', () => {
+    // `-desc "-tag is confusing"` must keep its value verbatim.
+    expect(expandSingleDashFlags(['-desc', '-tag'], ['desc', 'tag'])).toEqual(['--desc', '-tag'])
+  })
+
+  it('leaves an unrelated token untouched', () => {
+    expect(expandSingleDashFlags(['-nope', 'x'], ['tag'])).toEqual(['-nope', 'x'])
   })
 })
