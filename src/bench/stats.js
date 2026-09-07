@@ -141,3 +141,181 @@ export function countForAlpha(alpha) {
   }
   return 0
 }
+
+/**
+ * Largest sample size for which the exact test is enumerated. Above this the
+ * normal approximation is used. The default count of 10 rounds per side sits
+ * exactly at this limit, so a default run gets the exact test.
+ */
+export const EXACT_LIMIT = 10
+
+/**
+ * Two-sided Mann-Whitney U test (a rank-sum test).
+ *
+ * Chosen over a t-test because it assumes nothing about the shape of the
+ * distribution. Benchmark timings are right-skewed with occasional large
+ * outliers from GC pauses and scheduler preemption; a t-test's normality
+ * assumption is not merely unmet, it is unmet in the direction that
+ * manufactures false significance.
+ *
+ * @param {number[]} a
+ * @param {number[]} b
+ * @returns {{p: number, n1: number, n2: number, exact: boolean, warnings: string[]}}
+ */
+export function mannWhitneyU(a, b) {
+  const n1 = a.length
+  const n2 = b.length
+  if (n1 < 2 || n2 < 2) {
+    throw new Error(`Mann-Whitney needs at least 2 observations per side, got ${n1}/${n2}`)
+  }
+
+  const warnings = []
+  const { rankSumA, tieGroups, allTied } = rank(a, b)
+
+  if (allTied) {
+    warnings.push(
+      'the two samples are indistinguishable — every observation is identical, so no test can separate them',
+    )
+    return { p: 1, n1, n2, exact: false, warnings }
+  }
+
+  // U1 is the count of (a, b) pairs in which a wins, derived from the rank sum.
+  const u1 = rankSumA - (n1 * (n1 + 1)) / 2
+  const u2 = n1 * n2 - u1
+  const u = Math.min(u1, u2)
+
+  const exact = n1 <= EXACT_LIMIT && n2 <= EXACT_LIMIT && tieGroups.length === 0
+  const p = exact ? exactP(n1, n2, u) : normalP(n1, n2, u, tieGroups)
+
+  // The floor below which this pair of sample sizes cannot reach, however far
+  // apart the samples are. Surfaced here so a caller can tell "no difference"
+  // from "this experiment was never able to show one".
+  if (minAchievableP(n1, n2) >= ALPHA) {
+    warnings.push(
+      `with ${n1}/${n2} observations the test cannot produce a p-value below ` +
+        `${minAchievableP(n1, n2).toFixed(5)}, so it can never reach alpha=${ALPHA} however large the ` +
+        `difference is — raise count to at least ${countForAlpha(ALPHA)}`,
+    )
+  }
+  return { p: Math.min(1, p), n1, n2, exact, warnings }
+}
+
+/**
+ * Assigns midranks across the pooled samples and returns the rank sum of a,
+ * along with the sizes of every tie group (used by the tie correction).
+ */
+function rank(a, b) {
+  const pooled = [
+    ...a.map((value) => ({ value, fromA: true })),
+    ...b.map((value) => ({ value, fromA: false })),
+  ].sort((x, y) => x.value - y.value)
+
+  let rankSumA = 0
+  const tieGroups = []
+  for (let i = 0; i < pooled.length; ) {
+    let j = i
+    while (j + 1 < pooled.length && pooled[j + 1].value === pooled[i].value) j++
+    const size = j - i + 1
+    // Midrank: the average of the 1-based ranks this tie group spans.
+    const midrank = (i + 1 + (j + 1)) / 2
+    for (let k = i; k <= j; k++) {
+      if (pooled[k].fromA) rankSumA += midrank
+    }
+    if (size > 1) tieGroups.push(size)
+    i = j + 1
+  }
+  return { rankSumA, tieGroups, allTied: tieGroups.length === 1 && tieGroups[0] === pooled.length }
+}
+
+/**
+ * Exact two-sided p by enumerating the null distribution of U.
+ *
+ * counts[u] is the number of ways to arrange n1 items among n1+n2 positions
+ * that produce statistic u, from the recurrence
+ *   N(n1, n2, u) = N(n1-1, n2, u - n2) + N(n1, n2-1, u)
+ * evaluated as a rolling table over u. At n1 = n2 = 10 this is 100 * 101
+ * table updates, which is instant.
+ */
+function exactP(n1, n2, u) {
+  const maxU = n1 * n2
+
+  // f[j][x] = the number of arrangements of i A's and j B's whose statistic is
+  // x, rolled forward over i. The recurrence is
+  //
+  //   f(i, j, x) = f(i-1, j, x-j) + f(i, j-1, x)
+  //
+  // Place an A last and it sits after all j B's, contributing j to the
+  // statistic; place a B last and it contributes nothing.
+  //
+  // The tempting shortcut — letting each of the n1 A's independently take any
+  // value in 0..n2 — is WRONG: it counts ordered compositions, (n2+1)^n1
+  // rather than C(n1+n2, n1) arrangements (25,937,424,601 instead of 184,756
+  // at n1=n2=10). It agrees with this one only at u=0, where a single
+  // arrangement is possible either way, so a test that checks only the
+  // p-value floor cannot tell the two apart while every intermediate p-value
+  // is wrong.
+  let f = Array.from({ length: n2 + 1 }, () => new Float64Array(maxU + 1))
+  for (let j = 0; j <= n2; j++) f[j][0] = 1 // i=0: all B's, statistic 0
+  for (let i = 1; i <= n1; i++) {
+    const next = Array.from({ length: n2 + 1 }, () => new Float64Array(maxU + 1))
+    for (let j = 0; j <= n2; j++) {
+      for (let x = 0; x <= maxU; x++) {
+        let v = x - j >= 0 ? f[j][x - j] : 0 // f(i-1, j, x-j)
+        if (j > 0) v += next[j - 1][x] // f(i, j-1, x)
+        next[j][x] = v
+      }
+    }
+    f = next
+  }
+
+  const total = binom(n1 + n2, n1)
+  let cumulative = 0
+  for (let x = 0; x <= u; x++) cumulative += f[n2][x]
+  return Math.min(1, (2 * cumulative) / total)
+}
+
+/**
+ * Normal approximation with the standard tie correction. Used above the exact
+ * limit and whenever the pooled samples contain ties.
+ */
+function normalP(n1, n2, u, tieGroups) {
+  const n = n1 + n2
+  let tieTerm = 0
+  for (const t of tieGroups) tieTerm += t ** 3 - t
+  const variance = ((n1 * n2) / 12) * (n + 1 - tieTerm / (n * (n - 1)))
+  if (variance <= 0) return 1
+  const z = (u - (n1 * n2) / 2) / Math.sqrt(variance)
+  return Math.min(1, 2 * normalCdf(-Math.abs(z)))
+}
+
+/** Standard normal CDF, via the complementary error function. */
+function normalCdf(z) {
+  return 0.5 * erfc(-z / Math.SQRT2)
+}
+
+/**
+ * Complementary error function. Numerical Recipes' Chebyshev approximation,
+ * accurate to about 1.2e-7 relative — far tighter than any p-value here is
+ * interpreted to.
+ */
+function erfc(x) {
+  const z = Math.abs(x)
+  const t = 2 / (2 + z)
+  const ty = 4 * t - 2
+  const coefficients = [
+    -1.3026537197817094, 6.4196979235649026e-1, 1.9476473204185836e-2, -9.561514786808631e-3,
+    -9.46595344482036e-4, 3.66839497852761e-4, 4.2523324806907e-5, -2.0278578112534e-5,
+    -1.624290004647e-6, 1.303655835580e-6, 1.5626441722e-8, -8.5238095915e-8, 6.529054439e-9,
+    5.059343495e-9, -9.91364156e-10, -2.27365122e-10, 9.6467911e-11, 2.394038e-12,
+    -6.886027e-12, 8.94487e-13, 3.13092e-13, -1.12708e-13, 3.81e-16, 7.106e-15,
+  ]
+  let d = 0
+  let dd = 0
+  for (let j = coefficients.length - 1; j > 0; j--) {
+    const tmp = d
+    d = ty * d - dd + coefficients[j]
+    dd = tmp
+  }
+  const result = t * Math.exp(-z * z + 0.5 * (coefficients[0] + ty * d) - dd)
+  return x >= 0 ? result : 2 - result
+}
