@@ -69,23 +69,43 @@ export function summary(values, confidence = CONFIDENCE) {
   const warnings = []
 
   // Largest k whose interval still covers at least `confidence`.
-  let best = -1
-  let cumulative = 0 // P(Bin(n, 1/2) <= k)
-  const total = 2 ** n
-  for (let k = 0; k <= (n - 1) >> 1; k++) {
-    cumulative += binom(n, k) / total
-    if (1 - 2 * cumulative >= confidence) best = k
+  //
+  // The cumulative binomial is accumulated in LOG SPACE, carrying log C(n,k)
+  // incrementally. The direct form — binom(n, k) / 2 ** n — overflows to
+  // Infinity at n = 1024 and then silently yields 0 and NaN, so the loop exits
+  // on a comparison against NaN and returns a k that is neither correct nor
+  // conservative, with no warning. Carrying the log also makes this O(n)
+  // rather than O(n^2), since binom is no longer recomputed per iteration.
+  const logThreshold = Math.log((1 - confidence) / 2)
+  let logCoefficient = 0 // log C(n, 0)
+  let logCumulative = logCoefficient - n * Math.LN2 // log P(Bin(n, 1/2) <= 0)
+  let best = logCumulative <= logThreshold ? 0 : -1
+  for (let k = 1; k <= (n - 1) >> 1; k++) {
+    logCoefficient += Math.log(n - k + 1) - Math.log(k)
+    logCumulative = logAddExp(logCumulative, logCoefficient - n * Math.LN2)
+    if (logCumulative <= logThreshold) best = k
     else break
   }
 
   if (best < 0) {
     warnings.push(
-      `confidence interval requires at least 6 observations per side at ${(confidence * 100).toFixed(0)}% ` +
+      `confidence interval requires at least 6 observations at ${(confidence * 100).toFixed(0)}% ` +
         `confidence; got ${n}, so the interval around the reported median is unbounded — raise count`,
     )
     return { center, lo: -Infinity, hi: Infinity, warnings }
   }
   return { center, lo: sorted[best], hi: sorted[n - 1 - best], warnings }
+}
+
+/**
+ * log(exp(a) + exp(b)), computed so the larger term never leaves log space.
+ * Summing the probabilities directly would underflow to zero for the tiny
+ * per-term values that arise at large n.
+ */
+function logAddExp(a, b) {
+  const max = Math.max(a, b)
+  if (max === -Infinity) return max
+  return max + Math.log1p(Math.exp(Math.min(a, b) - max))
 }
 
 /**
