@@ -212,7 +212,12 @@ export async function evalOnce(o) {
     scope: o.cfg.scope,
     timeoutMs,
     log: o.log,
+    signal: o.signal,
   })
+  // An abort during the gate phase is an ABORT, not a gate failure. Without
+  // this the killed subprocess would look like a failing test, producing a
+  // FAIL verdict and a results.tsv row for an experiment nobody measured.
+  if (o.signal?.aborted) throw new Error('aborted during the correctness gates')
   for (const outcome of outcomes) {
     if (outcome.skipped) o.log?.write(`gate ${outcome.name} skipped: ${outcome.skipped}\n`)
     if (outcome.ok) continue

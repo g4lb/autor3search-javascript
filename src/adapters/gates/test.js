@@ -14,7 +14,9 @@ export async function unavailable(dir) {
 
 export async function run(dir, opts) {
   const bin = resolveFrom(dir, 'vitest/vitest.mjs')
-  const result = await new Runner(dir, opts.timeoutMs, opts.log).run(process.execPath, [bin, 'run'])
+  const result = await new Runner(dir, opts.timeoutMs, opts.log).run(process.execPath, [bin, 'run'], {
+    signal: opts.signal,
+  })
   return {
     ran: true,
     ok: result.ok(),
