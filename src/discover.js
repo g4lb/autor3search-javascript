@@ -128,7 +128,7 @@ function collect(nodes, prefix, emit) {
  * exactly this ambiguity, which is why `.tsx` exists, so keying on the
  * extension costs nothing and cannot regress a legitimate construct.
  */
-function pluginsFor(rel) {
+export function pluginsFor(rel) {
   const common = ['decorators-legacy', 'importAttributes']
   if (/\.(mts|cts|ts)$/.test(rel)) return ['typescript', ...common]
   if (rel.endsWith('.tsx')) return ['typescript', 'jsx', ...common]
