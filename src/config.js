@@ -53,6 +53,15 @@ const KEY_MAP = {
   heap_hint: 'heapHint',
 }
 
+/** Every in-memory field name, derived from the defaults so the two cannot drift. */
+const KNOWN_FIELDS = new Set(Object.keys(defaultConfig()))
+
+/** Every key a user may legally write in the YAML, for the error message. */
+const KNOWN_YAML_KEYS = new Set([
+  ...Object.keys(KEY_MAP),
+  ...[...KNOWN_FIELDS].filter((f) => !Object.values(KEY_MAP).includes(f)),
+])
+
 /**
  * Reads a config file, applying defaults for omitted fields and validating
  * the result.
@@ -82,6 +91,16 @@ export async function loadConfig(path) {
   for (const [key, value] of Object.entries(raw)) {
     if (value === undefined || value === null) continue
     const field = KEY_MAP[key] ?? key
+    // An unrecognised key is an ERROR, never a stray property. Without this, a
+    // typo like `max_regres_pct` is silently accepted while the real field
+    // keeps its default — so the run gates on a threshold the user never set
+    // and nothing says so. config.yaml is hashed at baseline, which means that
+    // typo is then locked in for the entire run.
+    if (!KNOWN_FIELDS.has(field)) {
+      throw new Error(
+        `${path}: unknown setting ${JSON.stringify(key)} — known settings are: ${[...KNOWN_YAML_KEYS].sort().join(', ')}`,
+      )
+    }
     // `gates` merges rather than replaces, so a config setting one gate does
     // not silently drop the defaults for the other two.
     if (field === 'gates' && typeof value === 'object' && !Array.isArray(value)) {
