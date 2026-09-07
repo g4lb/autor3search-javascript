@@ -29,6 +29,7 @@ export const REASON = {
   NEW_TEST_FILE: 'new_test_file',
   MISSING_TEST_FILE: 'missing_test_file',
   SYMLINK_SWAP: 'symlink_swap',
+  HARDLINK_SWAP: 'hardlink_swap',
   FROZEN_TAMPERED: 'frozen_store_tampered',
   BASELINE_TAMPERED: 'baseline_tampered',
   TYPECHECK: 'typecheck_failed',
