@@ -24,7 +24,14 @@ import { resolveFrom, walkSources } from './util.js'
 
 export const name = 'typecheck'
 
-/** Reports why this gate cannot run here, or null when it can. */
+/**
+ * Reports why this gate cannot run here, or null when it can.
+ *
+ * Always null: the parse fallback works everywhere, so there is no repository
+ * where this gate cannot run AT ALL. Degradation is reported separately — see
+ * the `degraded` flag in `run` — because a repo with a tsconfig but no
+ * installed typescript can still be parse-checked, just not type-checked.
+ */
 export async function unavailable() {
   return null // the parse fallback always works
 }
@@ -43,6 +50,7 @@ export async function run(dir, opts) {
       ok: result.ok(),
       timedOut: result.timedOut,
       skipped: null,
+      degraded: false,
       detail: result.ok() ? 'tsc --noEmit' : result.tail(30),
     }
   }
@@ -61,11 +69,24 @@ export async function run(dir, opts) {
       if (failures.length >= 20) break
     }
   }
+  // `degraded` marks a check WEAKER than the repository asked for: a
+  // tsconfig.json is present, so this repo wants real type checking, but
+  // typescript is not installed and only a syntax parse was possible. Under
+  // gates.typecheck: "on" that is a failure — a user who required type
+  // checking must not silently receive syntax checking instead. Under "auto"
+  // it runs and says so.
+  const degraded = hasTsconfig
   return {
     ran: true,
     ok: failures.length === 0,
     timedOut: false,
     skipped: null,
-    detail: failures.length === 0 ? 'parse check (no tsconfig.json)' : failures.join('\n'),
+    degraded,
+    detail:
+      failures.length > 0
+        ? failures.join('\n')
+        : degraded
+          ? 'parse check ONLY — tsconfig.json is present but typescript is not installed, so types were not checked'
+          : 'parse check (no tsconfig.json)',
   }
 }

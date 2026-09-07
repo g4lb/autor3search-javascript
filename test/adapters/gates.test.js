@@ -75,4 +75,31 @@ describe('runGates', () => {
     const outcomes = await runGates(dir, base)
     expect(outcomes.map((o) => o.name)).toEqual(['typecheck'])
   })
+
+  it('reports a parse-only typecheck as degraded when tsconfig exists without typescript', async () => {
+    const dir = await makeBenchRepo()
+    await writeFiles(dir, { 'tsconfig.json': '{ "compilerOptions": { "strict": true } }\n' })
+    const tc = byName(await runGates(dir, base), 'typecheck')
+    expect(tc.ran).toBe(true)
+    expect(tc.ok).toBe(true)
+    expect(tc.degraded).toBe(true)
+    expect(tc.detail).toMatch(/types were not checked/)
+  })
+
+  it('fails a degraded typecheck when the user set gates.typecheck to on', async () => {
+    // Requiring type checking and silently receiving syntax checking is the
+    // same defect as the gate vanishing, but harder to notice.
+    const dir = await makeBenchRepo()
+    await writeFiles(dir, { 'tsconfig.json': '{ "compilerOptions": { "strict": true } }\n' })
+    const tc = byName(await runGates(dir, { ...base, modes: { ...auto, typecheck: 'on' } }), 'typecheck')
+    expect(tc.ok).toBe(false)
+    expect(tc.detail).toMatch(/degraded/)
+  })
+
+  it('does not mark a plain-JS repo parse check as degraded', async () => {
+    const dir = await makeBenchRepo()
+    const tc = byName(await runGates(dir, base), 'typecheck')
+    expect(tc.degraded).toBeFalsy()
+    expect(tc.ok).toBe(true)
+  })
 })
