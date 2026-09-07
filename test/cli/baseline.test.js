@@ -126,4 +126,9 @@ describe('baseline', () => {
     expect(out).toContain('baseline-worktree')
     expect(out).toContain('autor3search-javascript stop')
   })
+
+  it('accepts the -tag spelling program.md tells the agent to use', async () => {
+    const dir = await initialised()
+    expect((await runCli(['baseline', '-C', dir, '-tag', 'sep7'])).code).toBe(0)
+  })
 })

@@ -10,6 +10,40 @@ import * as gitx from '../gitx.js'
 import { BRANCH_PREFIX, stateDir, validTag } from '../state/index.js'
 import { join } from 'node:path'
 
+/**
+ * Rewrites single-dash multi-character flags into the long form parseArgs
+ * accepts.
+ *
+ * Node's parseArgs recognises a single dash ONLY for a single-character option
+ * name, so `-C` works but `-tag` fails with "Unknown option '-t'" and `-desc`
+ * with "Unknown option '-d'". This harness documents the single-dash spelling
+ * throughout — program.md tells the agent to run `eval -desc "..."` and
+ * `baseline -tag sep7`, matching the go tool it ports — so the tokens are
+ * normalised here rather than changing a contract an agent already follows.
+ *
+ * Only an exact whole-token match is rewritten, so a VALUE that happens to
+ * look like a flag (`-desc "-tag is confusing"`) is left alone.
+ *
+ * @param {string[]} args
+ * @param {string[]} names long option names to accept in single-dash form
+ * @returns {string[]}
+ */
+export function expandSingleDashFlags(args, names) {
+  const single = new Set(names.map((name) => `-${name}`))
+  let expectingValue = false
+  return args.map((token) => {
+    if (expectingValue) {
+      expectingValue = false
+      return token
+    }
+    if (single.has(token)) {
+      expectingValue = true
+      return `--${token.slice(1)}`
+    }
+    return token
+  })
+}
+
 /** The repository root containing dir. */
 export async function resolveRepo(dir) {
   try {

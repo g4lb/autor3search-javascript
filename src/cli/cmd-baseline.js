@@ -23,16 +23,11 @@ import {
   stateDir,
   validTag,
 } from '../state/index.js'
-import { loadRepoConfig, resolveRepo } from './context.js'
+import { expandSingleDashFlags, loadRepoConfig, resolveRepo } from './context.js'
 
 export async function runBaseline(args, io) {
-  // Node's parseArgs only recognises a single-dash spelling for a
-  // single-character option name; a multi-character one requires "--tag".
-  // program.md and this command's own usage document "-tag", so the single
-  // token is rewritten to the long form parseArgs accepts before parsing.
-  const rewritten = args.map((a) => (a === '-tag' ? '--tag' : a))
   const { values } = parseArgs({
-    args: rewritten,
+    args: expandSingleDashFlags(args, ['tag']),
     options: {
       C: { type: 'string', default: '.' },
       tag: { type: 'string', default: defaultTag() },
