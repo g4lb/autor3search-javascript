@@ -21,7 +21,6 @@ describe('defaultConfig', () => {
       benchmarks: [],
       scope: ['**'],
       count: 10,
-      benchtime: '1s',
       maxRegressPct: 5,
       minEffectPct: 1,
       timeout: '15m',
@@ -37,7 +36,6 @@ describe('loadConfig', () => {
   it('applies defaults for omitted fields', async () => {
     const cfg = await loadConfig(await write('count: 8\n'))
     expect(cfg.count).toBe(8)
-    expect(cfg.benchtime).toBe('1s')
     expect(cfg.scope).toEqual(['**'])
   })
 
@@ -68,10 +66,17 @@ describe('loadConfig', () => {
     await expect(loadConfig(await write('nonsense: 1\n'))).rejects.toThrow(/max_regress_pct/)
   })
 
+  it('rejects a config still carrying the removed benchtime field', async () => {
+    // Vitest exposes no global benchmark-time option, so this field silently
+    // did nothing. An existing config must fail loudly rather than quietly
+    // stop having an effect.
+    await expect(loadConfig(await write('benchtime: 1s\n'))).rejects.toThrow(/unknown setting/)
+  })
+
   it('accepts every documented setting without complaint', async () => {
     const cfg = await loadConfig(
       await write(
-        'benchmarks: ["a"]\nscope: ["src/**"]\ncount: 8\nbenchtime: 2s\nmax_regress_pct: 3\n' +
+        'benchmarks: ["a"]\nscope: ["src/**"]\ncount: 8\nmax_regress_pct: 3\n' +
           'min_effect_pct: 2\ntimeout: 10m\nunfreeze: ["x.test.js"]\nrunner: vitest\nheap_hint: false\n' +
           'gates:\n  lint: "on"\n',
       ),
@@ -91,15 +96,6 @@ describe('validate', () => {
   it('refuses a count below 4 and explains why', () => {
     expect(() => validate({ ...ok(), count: 3 })).toThrow(/at least 4/)
     expect(() => validate({ ...ok(), count: 3 })).toThrow(/every experiment would be discarded/)
-  })
-
-  it('refuses the fixed-iteration-count benchtime form with an explanation', () => {
-    expect(() => validate({ ...ok(), benchtime: '100x' })).toThrow(/fixed-iteration-count/)
-    expect(() => validate({ ...ok(), benchtime: '100x' })).toThrow(/thermal/)
-  })
-
-  it('refuses a benchtime that is not a duration', () => {
-    expect(() => validate({ ...ok(), benchtime: 'soon' })).toThrow(/not a duration/)
   })
 
   it('refuses a negative max_regress_pct', () => {
