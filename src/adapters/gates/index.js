@@ -45,6 +45,13 @@ export async function runGates(dir, opts) {
     }
 
     const outcome = { name: gate.name, ...(await gate.run(dir, opts)) }
+    // A gate that ran but only in a WEAKER form than the repository calls for
+    // fails when the user required it. Silently giving someone a lesser check
+    // than they asked for is the same defect as skipping it, but harder to notice.
+    if (mode === 'on' && outcome.degraded && outcome.ok) {
+      outcome.ok = false
+      outcome.detail = `gates.${gate.name} is "on" but only a degraded check was possible: ${outcome.detail}`
+    }
     outcomes.push(outcome)
     if (!outcome.ok) return outcomes
   }
