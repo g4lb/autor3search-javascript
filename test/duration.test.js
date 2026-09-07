@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDuration, isIterationCountForm, parseDuration } from '../src/duration.js'
+import { formatDuration, parseDuration } from '../src/duration.js'
 
 describe('parseDuration', () => {
   it('parses plain second, minute and hour units', () => {
@@ -32,19 +32,6 @@ describe('parseDuration', () => {
 
   it('rejects an unknown unit', () => {
     expect(() => parseDuration('5days')).toThrow(/not a duration/)
-  })
-})
-
-describe('isIterationCountForm', () => {
-  it('recognises the fixed-iteration-count form', () => {
-    expect(isIterationCountForm('100x')).toBe(true)
-    expect(isIterationCountForm('1x')).toBe(true)
-  })
-
-  it('does not mistake a duration for it', () => {
-    expect(isIterationCountForm('1s')).toBe(false)
-    expect(isIterationCountForm('100')).toBe(false)
-    expect(isIterationCountForm('x')).toBe(false)
   })
 })
 

@@ -1,8 +1,8 @@
 /**
- * Go-style duration parsing, used for `benchtime` and `timeout` in the run
- * configuration. Values are written the way `go test -benchtime` accepts them
- * ("1s", "500ms", "15m") so a user moving between the Go and JavaScript
- * harnesses does not have to relearn the format.
+ * Go-style duration parsing, used for `timeout` in the run configuration.
+ * Values are written the way `go test -benchtime` accepts them ("1s",
+ * "500ms", "15m") so a user moving between the Go and JavaScript harnesses
+ * does not have to relearn the format.
  */
 
 /** Milliseconds per unit. */
@@ -18,22 +18,6 @@ const UNITS = {
 
 /** One `<number><unit>` term, e.g. "1h", "30.5s". */
 const TERM = /(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/gy
-
-/** `go test -benchtime`'s fixed-iteration-count form, e.g. "100x". */
-const ITERATION_COUNT_FORM = /^\d+x$/
-
-/**
- * Reports whether s is the fixed-iteration-count form. Callers reject that
- * form deliberately rather than merely failing to parse it: it is a legal
- * value for the real `go test -benchtime` flag, so a user who wrote it did
- * not make a typo and deserves an explanation.
- *
- * @param {string} s
- * @returns {boolean}
- */
-export function isIterationCountForm(s) {
-  return ITERATION_COUNT_FORM.test(s)
-}
 
 /**
  * Parses a duration into milliseconds. Fractional values and compound terms

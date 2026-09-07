@@ -8,7 +8,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import { parse as parseYaml } from 'yaml'
-import { isIterationCountForm, parseDuration } from './duration.js'
+import { parseDuration } from './duration.js'
 
 /** Config location, relative to the repository root. */
 export const CONFIG_PATH = '.autor3search/config.yaml'
@@ -35,7 +35,6 @@ export function defaultConfig() {
     benchmarks: [],
     scope: ['**'],
     count: 10,
-    benchtime: '1s',
     maxRegressPct: 5,
     minEffectPct: 1,
     timeout: '15m',
@@ -154,20 +153,6 @@ export function validate(c) {
     throw new Error('benchmarks must be a list of benchmark names')
   }
 
-  try {
-    parseDuration(c.benchtime)
-  } catch (err) {
-    if (isIterationCountForm(c.benchtime)) {
-      throw new Error(
-        `benchtime ${JSON.stringify(c.benchtime)} uses the fixed-iteration-count form (Nx), which is ` +
-          `deliberately unsupported here: a fixed count makes rounds incomparable, because a candidate ` +
-          `that is twice as fast finishes in half the wall time and is therefore measured under ` +
-          `different thermal conditions — exactly what the interleaved A/B design exists to eliminate. ` +
-          `Use a duration instead, e.g. benchtime: 1s`,
-      )
-    }
-    throw err
-  }
   parseDuration(c.timeout)
 
   if (!RUNNERS.includes(c.runner)) {
