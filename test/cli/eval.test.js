@@ -9,7 +9,7 @@ import { claimEval, evalRunning } from '../../src/state/lock.js'
 import { requestStop } from '../../src/state/stop.js'
 import { loadRows } from '../../src/results.js'
 import { runCli } from '../helpers/cli.js'
-import { FAST_WORDCOUNT, makeBenchRepo } from '../helpers/bench-repo.js'
+import { FAST_WORDCOUNT, WORDCOUNT_TEST, makeBenchRepo } from '../helpers/bench-repo.js'
 import { commitFiles, writeFiles } from '../helpers/repo.js'
 
 const original = process.env[STATE_HOME_ENV]
@@ -188,6 +188,75 @@ describe('eval', () => {
     // No stop was ever requested for this run, so an interrupt alone must
     // not be reported as if one had been.
     expect(payload.stop_requested).toBe(false)
+    expect(await loadRows(join(dir, 'results.tsv'))).toHaveLength(0)
+    expect((await evalRunning(state)).running).toBe(false)
+  })
+
+  it('reports ABORTED, not FAIL, when SIGINT lands during the test gate rather than measurement', async () => {
+    // The gate phase used to ignore the abort signal entirely: Ctrl+C during
+    // `tsc`/`eslint`/`vitest` would not be seen until measure() started, and
+    // a subprocess killed mid-gate would look like a genuinely failing test
+    // (FAIL, with a results.tsv row) rather than an aborted experiment. This
+    // proves both: the interrupt is now honoured promptly, and it still
+    // produces ABORTED with no row when it hits the slowest gate — the test
+    // gate — instead of the measurement phase the other SIGINT test covers.
+    const dir = await makeBenchRepo()
+    await runCli(['init', '-C', dir])
+    // A frozen test that sleeps well past both this test's patience and the
+    // point where the other SIGINT test's interrupt already lands (during
+    // measurement) guarantees THIS interrupt instead lands while the test
+    // gate's vitest subprocess is still running. testTimeout is raised so
+    // vitest's own per-test timeout never fires first and masks the point
+    // being tested.
+    await writeFiles(dir, {
+      'src/wordcount.test.js': `${WORDCOUNT_TEST}\ntest('slow gate', async () => {\n  await new Promise((r) => setTimeout(r, 8000))\n})\n`,
+      'vitest.config.js': 'export default { test: { testTimeout: 30000 } }\n',
+      '.autor3search/config.yaml': 'benchmarks: ["countWords"]\ncount: 4\nscope: ["src/**"]\nheap_hint: false\n',
+    })
+    await commitFiles(dir, {}, 'init')
+    await runCli(['baseline', '-C', dir, '-tag', 't'])
+    await commitFiles(dir, { 'src/wordcount.js': FAST_WORDCOUNT })
+
+    const bin = fileURLToPath(new URL('../../bin/autor3search-javascript.js', import.meta.url))
+    const start = Date.now()
+    const child = spawn(process.execPath, [bin, 'eval', '-C', dir, '--json', '-desc', 'aborted during gates'], {
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let out = ''
+    child.stdout.on('data', (chunk) => {
+      out += chunk
+    })
+    let closed = false
+    child.on('close', () => {
+      closed = true
+    })
+
+    // Wait until the claim is held (the run has started), same as the other
+    // SIGINT test, then give the fast typecheck/lint gates a moment to clear
+    // so the interrupt below is guaranteed to land on the slow test gate.
+    const state = await stateDir(dir, 't')
+    const claimDeadline = Date.now() + 60_000
+    while (Date.now() < claimDeadline && !closed) {
+      if ((await evalRunning(state)).running) break
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    expect(closed).toBe(false)
+    await new Promise((r) => setTimeout(r, 1500))
+    expect(closed).toBe(false) // still inside the 8s test gate, not finished on its own
+
+    child.kill('SIGINT')
+    const code = await new Promise((resolve) => child.on('close', resolve))
+    const elapsed = Date.now() - start
+
+    // The old behaviour would wait out the rest of the 8s sleep (plus lint
+    // and typecheck) before doing anything; the fix kills the gate's
+    // subprocess group immediately on abort.
+    expect(elapsed).toBeLessThan(6000)
+    expect(code).toBe(2)
+    const payload = JSON.parse(out)
+    expect(payload.status).toBe('ABORTED')
+    expect(payload.reason).toBe('stop_forced')
     expect(await loadRows(join(dir, 'results.tsv'))).toHaveLength(0)
     expect((await evalRunning(state)).running).toBe(false)
   })

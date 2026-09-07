@@ -102,4 +102,15 @@ describe('runGates', () => {
     expect(tc.degraded).toBeFalsy()
     expect(tc.ok).toBe(true)
   })
+
+  it('stops after the first gate when the caller already aborted', async () => {
+    // An already-aborted signal must short-circuit as soon as it is observed
+    // — the remaining gates would only spend minutes producing output nobody
+    // will read, exactly like a genuine failure stops the loop early.
+    const dir = await makeBenchRepo()
+    const controller = new AbortController()
+    controller.abort()
+    const outcomes = await runGates(dir, { ...base, signal: controller.signal })
+    expect(outcomes.map((o) => o.name)).toEqual(['typecheck'])
+  })
 })

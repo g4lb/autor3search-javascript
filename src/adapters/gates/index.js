@@ -14,7 +14,7 @@ const GATES = [typecheck, lint, test]
 
 /**
  * @param {string} dir
- * @param {{modes: Record<string,string>, scope: string[], timeoutMs: number, log?: object}} opts
+ * @param {{modes: Record<string,string>, scope: string[], timeoutMs: number, log?: object, signal?: AbortSignal}} opts
  * @returns {Promise<{name: string, ran: boolean, ok: boolean, timedOut: boolean, skipped: string|null, detail: string}[]>}
  */
 export async function runGates(dir, opts) {
@@ -45,6 +45,9 @@ export async function runGates(dir, opts) {
     }
 
     const outcome = { name: gate.name, ...(await gate.run(dir, opts)) }
+    // Stop early if the caller aborted while this gate ran; the remaining
+    // gates would only spend minutes producing output nobody will read.
+    if (opts.signal?.aborted) return outcomes.concat(outcome)
     // A gate that ran but only in a WEAKER form than the repository calls for
     // fails when the user required it. Silently giving someone a lesser check
     // than they asked for is the same defect as skipping it, but harder to notice.

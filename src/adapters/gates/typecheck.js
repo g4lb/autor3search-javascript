@@ -44,7 +44,9 @@ export async function run(dir, opts) {
   const tsc = hasTsconfig ? resolveFrom(dir, 'typescript/bin/tsc') : null
 
   if (tsc) {
-    const result = await new Runner(dir, opts.timeoutMs, opts.log).run(process.execPath, [tsc, '--noEmit'])
+    const result = await new Runner(dir, opts.timeoutMs, opts.log).run(process.execPath, [tsc, '--noEmit'], {
+      signal: opts.signal,
+    })
     return {
       ran: true,
       ok: result.ok(),
@@ -58,6 +60,10 @@ export async function run(dir, opts) {
   const matcher = createMatcher(opts.scope)
   const failures = []
   for (const rel of await walkSources(dir, SOURCE_EXTS)) {
+    // Cheap: a boolean read, not a listener. The parse fallback has no
+    // subprocess for the Runner to kill, so without this an abort mid-walk
+    // would wait out the rest of a large repository's file list.
+    if (opts.signal?.aborted) break
     if (!matcher.match(rel)) continue
     try {
       parse(await readFile(join(dir, rel), 'utf8'), {

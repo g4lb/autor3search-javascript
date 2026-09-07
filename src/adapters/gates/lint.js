@@ -33,7 +33,9 @@ export async function unavailable(dir) {
 
 export async function run(dir, opts) {
   const bin = resolveFrom(dir, 'eslint/bin/eslint.js')
-  const result = await new Runner(dir, opts.timeoutMs, opts.log).run(process.execPath, [bin, '.'])
+  const result = await new Runner(dir, opts.timeoutMs, opts.log).run(process.execPath, [bin, '.'], {
+    signal: opts.signal,
+  })
   return {
     ran: true,
     ok: result.ok(),
