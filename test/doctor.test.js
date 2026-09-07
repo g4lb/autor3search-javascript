@@ -1,3 +1,4 @@
+import { relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { SEVERITY, check } from '../src/doctor.js'
 import { runCli } from './helpers/cli.js'
@@ -58,6 +59,16 @@ describe('check', () => {
 
   it('never throws on a platform it does not know', async () => {
     await expect(check(await makeRepo())).resolves.toBeInstanceOf(Array)
+  })
+
+  it('reports vitest correctly when -C is a relative path', async () => {
+    // `-C` defaults to "." and createRequire throws on relative paths, which
+    // silently reported "vitest not installed" for every repo that had it.
+    const dir = await makeBenchRepo()
+    const relativeDir = relative(process.cwd(), dir)
+    const findings = await check(relativeDir)
+    const vitest = findings.find((f) => f.name === 'vitest')
+    expect(vitest.severity).toBe(SEVERITY.OK)
   })
 })
 
