@@ -5,6 +5,8 @@
   "type": "module",
   "license": "MIT",
   "author": "Gal Be <galevgi@gmail.com>",
+  "repository": { "type": "git", "url": "git+https://github.com/g4lb/autor3search-javascript.git" },
+  "keywords": ["benchmark", "performance", "optimization", "vitest", "ai-agent", "harness"],
   "bin": { "autor3search-javascript": "./bin/autor3search-javascript.js" },
   "engines": { "node": ">=20" },
   "files": ["bin", "src", "templates"],
