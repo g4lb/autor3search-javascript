@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { UNIT_TIME } from '../../src/bench/set.js'
 import { getBenchRunner, vitestRunner } from '../../src/adapters/bench/index.js'
 import { makeBenchRepo } from '../helpers/bench-repo.js'
+import { writeFiles } from '../helpers/repo.js'
 
 const opts = { benchmarks: [], timeoutMs: 120_000 }
 
@@ -40,14 +41,38 @@ describe('vitestRunner.run', () => {
 
   it('reports a failing bench run with an excerpt rather than an empty set', async () => {
     const dir = await makeBenchRepo()
-    const { writeFiles } = await import('../helpers/repo.js')
     await writeFiles(dir, { 'src/wordcount.bench.js': `import { bench } from 'vitest'\nthrow new Error('boom')\n` })
     await expect(vitestRunner.run(dir, opts)).rejects.toThrow(/boom|bench run failed/i)
   })
 
+  it('refuses a run whose bench body throws at call time, even though Vitest exits 0', async () => {
+    // Vitest swallows a call-time throw: exit code 0, report written with
+    // zeros and no median. The only thing standing between that and a scored
+    // measurement is the parser's median-only rule. Confirmed empirically:
+    // Vitest exits 0 here and writes {"rme":0,"samples":[]} with no "median"
+    // key at all, so parseVitestBench's median-only check is what actually
+    // catches this, not vitestRunner's own exit-code check.
+    const dir = await makeBenchRepo()
+    await writeFiles(dir, {
+      'src/wordcount.bench.js': `import { bench } from 'vitest'
+bench('countWords', () => { throw new Error('exploded mid-benchmark') })
+`,
+    })
+    await expect(vitestRunner.run(dir, { benchmarks: [], timeoutMs: 120_000 })).rejects.toThrow(
+      /reported no "median"/,
+    )
+  })
+
+  it('aborts a bench round through opts.signal', async () => {
+    const dir = await makeBenchRepo()
+    const controller = new AbortController()
+    const promise = vitestRunner.run(dir, { benchmarks: [], timeoutMs: 120_000, signal: controller.signal })
+    setTimeout(() => controller.abort(), 300)
+    await expect(promise).rejects.toThrow(/timed out/)
+  })
+
   it('passes extra environment variables through to the benchmark process', async () => {
     const dir = await makeBenchRepo()
-    const { writeFiles } = await import('../helpers/repo.js')
     await writeFiles(dir, {
       'src/wordcount.bench.js': `import { bench } from 'vitest'
 if (process.env.A3S_PROBE !== 'set') throw new Error('env not propagated')
