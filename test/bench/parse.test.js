@@ -60,10 +60,24 @@ describe('parseVitestBench', () => {
     expect(() => parseVitestBench({ files: [] })).toThrow(/no benchmarks/i)
   })
 
-  it('throws on a benchmark with no usable timing', () => {
+  it('throws on a benchmark reporting no median, rather than substituting another estimator', () => {
     expect(() =>
       parseVitestBench({ files: [{ filepath: 'a.bench.js', groups: [{ fullName: 'a.bench.js', benchmarks: [{ name: 'x' }] }] }] }),
-    ).toThrow(/no timing/i)
+    ).toThrow(/no "median"/)
+  })
+
+  it('does not fall back to mean or samples when median is absent', () => {
+    // mean and a median-over-samples are different estimators; substituting
+    // one silently would change what the score means.
+    const payload = {
+      files: [
+        {
+          filepath: 'a.bench.js',
+          groups: [{ fullName: 'a.bench.js', benchmarks: [{ name: 'x', mean: 5, samples: [1, 2, 3] }] }],
+        },
+      ],
+    }
+    expect(() => parseVitestBench(payload)).toThrow(/no "median"/)
   })
 
   it('rejects invalid JSON with the excerpt included', () => {

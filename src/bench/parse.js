@@ -21,10 +21,9 @@
  * reports for that task. Tinybench computes it over the samples taken inside
  * a single process invocation, which is exactly the per-round statistic the
  * scoring core needs — see the spec's section 3.2 for why the individual
- * samples must never reach the significance test. (In practice the captured
- * `samples` array is empty — Tinybench does not retain raw samples in this
- * report — so the fallback below rarely if ever fires against real Vitest
- * output; it exists as a defensive path for another shape variant.)
+ * samples must never reach the significance test. There is deliberately no
+ * fallback to `mean` or to a median computed over `samples` if `median` is
+ * absent — see `timingMs` below for why.
  */
 import { BenchSet, UNIT_TIME } from './set.js'
 
@@ -61,8 +60,8 @@ export function parseVitestBench(payload) {
         const ms = timingMs(task)
         if (ms === null) {
           throw new Error(
-            `benchmark ${JSON.stringify(name)} has no timing the harness can read (looked for ` +
-              `"median", then "mean", then "samples"): ${excerpt(task)}`,
+            `benchmark ${JSON.stringify(name)} reported no "median", which is the only timing this ` +
+              `parser accepts: ${excerpt(task)}`,
           )
         }
         set.record(taskPath(file, group, name), name, UNIT_TIME, ms * MS_TO_SEC)
@@ -81,19 +80,19 @@ export function parseVitestBench(payload) {
 }
 
 /**
- * The task's timing in milliseconds. Prefers the reported median, because it
- * is the robust centre tinybench already computed; falls back to the mean,
- * then to a median taken over raw samples.
+ * The task's timing in milliseconds: tinybench's own reported median.
+ *
+ * Deliberately no fallback. A median-over-`samples` fallback was tried and
+ * removed: Vitest 2.1.9's --outputJson writer hardcodes `samples: []`
+ * regardless of `benchmark.includeSamples`, so that branch was provably dead
+ * code. A mean fallback was removed for a different reason — the mean is a
+ * DIFFERENT estimator, outlier-sensitive in exactly the way benchmark timings
+ * punish, so silently substituting it would change what the score means
+ * without saying so. If a future Vitest stops reporting a median, this throws
+ * and names the benchmark, which is the honest failure.
  */
 function timingMs(task) {
-  if (Number.isFinite(task?.median)) return task.median
-  if (Number.isFinite(task?.mean)) return task.mean
-  if (Array.isArray(task?.samples) && task.samples.length > 0) {
-    const sorted = [...task.samples].sort((a, b) => a - b)
-    const mid = sorted.length >> 1
-    return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
-  }
-  return null
+  return Number.isFinite(task?.median) ? task.median : null
 }
 
 /**
