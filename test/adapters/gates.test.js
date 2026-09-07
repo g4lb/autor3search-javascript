@@ -1,7 +1,13 @@
+import { relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { runGates } from '../../src/adapters/gates/index.js'
+import { resolveFrom } from '../../src/adapters/gates/util.js'
 import { makeBenchRepo } from '../helpers/bench-repo.js'
 import { writeFiles } from '../helpers/repo.js'
+
+/** This project's own root — it has vitest installed, so it doubles as a "known resolvable" fixture. */
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
 const auto = { typecheck: 'auto', lint: 'auto', test: 'auto' }
 const base = { modes: auto, scope: ['**'], timeoutMs: 120_000 }
@@ -112,5 +118,16 @@ describe('runGates', () => {
     controller.abort()
     const outcomes = await runGates(dir, { ...base, signal: controller.signal })
     expect(outcomes.map((o) => o.name)).toEqual(['typecheck'])
+  })
+})
+
+describe('resolveFrom', () => {
+  it('resolves a package from a RELATIVE directory, not just an absolute one', () => {
+    // createRequire throws on a relative path and the catch turns that into
+    // null — a false "not installed" that looks identical to the real thing.
+    // This project's own root has vitest installed, so a relative path to
+    // it from cwd is a known-resolvable fixture.
+    const relativeRoot = relative(process.cwd(), PROJECT_ROOT)
+    expect(resolveFrom(relativeRoot, 'vitest/vitest.mjs')).not.toBeNull()
   })
 })

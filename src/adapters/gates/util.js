@@ -1,7 +1,7 @@
 /** Helpers shared by the gates and by src/doctor.js. */
 import { createRequire } from 'node:module'
 import { readdir } from 'node:fs/promises'
-import { join, relative, sep } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 
 /**
  * Resolves a package entry point from inside the MEASURED repository, so the
@@ -13,7 +13,12 @@ import { join, relative, sep } from 'node:path'
  */
 export function resolveFrom(dir, specifier) {
   try {
-    return createRequire(join(dir, 'noop.js')).resolve(specifier)
+    // resolve() FIRST. createRequire throws on a relative path, which the
+    // catch below turns into null — indistinguishable from "the tool is not
+    // installed". That silent false negative already bit once: `doctor -C .`
+    // reported vitest missing in repositories that had it. Guarding here
+    // rather than at each call site means no future caller can hit it.
+    return createRequire(join(resolve(dir), 'noop.js')).resolve(specifier)
   } catch {
     return null
   }
