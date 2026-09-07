@@ -24,7 +24,7 @@ import { measure } from './measure.js'
 import { RESULTS_PATH } from './results.js'
 import { runGates } from './adapters/gates/index.js'
 import { createMatcher } from './scope.js'
-import { WORKTREE_NAME, BASELINE_FILE, saveBaseline } from './state/index.js'
+import { WORKTREE_NAME, BASELINE_FILE, linkNodeModules, saveBaseline } from './state/index.js'
 import { REASON, STATUS, decide, gate } from './verdict.js'
 import { parseDuration } from './duration.js'
 
@@ -50,6 +50,39 @@ export const DEPENDENCY_FILES = new Set([
   'pnpm-lock.yaml',
   'bun.lock',
   'bun.lockb',
+])
+
+/**
+ * Vitest/Vite config filenames whose modification is rejected regardless of
+ * scope, for a different reason than DEPENDENCY_FILES: these are loaded by
+ * the bench runner ITSELF (`vitest bench --run --root=<dir>`), so an
+ * ordinary, in-scope, committed config file can redirect what a frozen
+ * benchmark imports — or stub out the code path it measures entirely —
+ * without the frozen benchmark file itself changing by even one byte. The
+ * default scope (`["**"]`) admits a root config file exactly like any other
+ * source file, so this cannot be left to the scope patterns any more than a
+ * dependency file can.
+ *
+ * The name/extension list is exhaustive for Vitest 2.1.9, verified directly
+ * against its own resolution table
+ * (node_modules/vitest/dist/chunks/constants.*.js: CONFIG_NAMES,
+ * CONFIG_EXTENSIONS, WORKSPACES_NAMES, WORKSPACES_EXTENSIONS) rather than
+ * guessed from documentation:
+ *   - `vitest.config` / `vite.config` (Vitest loads Vite's own config too),
+ *     each with .js .mjs .cjs .ts .mts .cts
+ *   - `vitest.workspace` / `vitest.projects` — the latter is an alternate
+ *     workspace name Vitest accepts that is easy to miss because the two
+ *     names are documented as synonyms nowhere obvious — each with those six
+ *     extensions plus .json
+ */
+const CONFIG_NAMES = ['vitest.config', 'vite.config']
+const CONFIG_EXTS = ['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts']
+const WORKSPACE_NAMES = ['vitest.workspace', 'vitest.projects']
+const WORKSPACE_EXTS = [...CONFIG_EXTS, '.json']
+
+export const TOOLCHAIN_CONFIG_FILES = new Set([
+  ...CONFIG_NAMES.flatMap((name) => CONFIG_EXTS.map((ext) => `${name}${ext}`)),
+  ...WORKSPACE_NAMES.flatMap((name) => WORKSPACE_EXTS.map((ext) => `${name}${ext}`)),
 ])
 
 /** Which gate failure maps to which status and reason. */
@@ -88,6 +121,16 @@ export async function evalOnce(o) {
           STATUS.FAIL,
           REASON.SCOPE,
           `${rel} may not be modified: dependency changes are a human decision, not an autonomous one`,
+        ),
+      )
+    }
+    if (TOOLCHAIN_CONFIG_FILES.has(rel)) {
+      return terminal(
+        gate(
+          STATUS.FAIL,
+          REASON.SCOPE,
+          `${rel} may not be modified: it is loaded by the bench runner itself and can redirect what a ` +
+            `benchmark measures without changing the frozen benchmark file at all`,
         ),
       )
     }
@@ -257,6 +300,10 @@ export async function evalOnce(o) {
   }
 
   // ---- 6. Measure ------------------------------------------------------
+  // Self-heals a worktree that lost its node_modules link — the target
+  // moved, someone deleted it — rather than failing every eval after the
+  // first. See linkNodeModules in src/state/index.js.
+  await linkNodeModules(o.root, worktreeDir)
   let baseSet, candSet
   try {
     ;({ baseSet, candSet } = await measure({

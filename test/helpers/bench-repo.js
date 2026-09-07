@@ -75,9 +75,24 @@ bench('countWords', () => {
  *
  * Vitest is linked from this project's own node_modules rather than
  * installed, so the fixture costs no network and no install time.
+ *
+ * The `.gitignore` line is committed BEFORE node_modules is symlinked in,
+ * and the symlink itself is created AFTER that commit — deliberately, so
+ * node_modules is never tracked. A real project gitignores node_modules
+ * (almost universally), which means a `git worktree add` checks out a tree
+ * with none — the pinned baseline side of every measurement has to cope
+ * with that (see linkNodeModules in src/state/index.js). Tracking the
+ * symlink here would hide that entire class of bug behind a fixture that
+ * doesn't exist in the wild: an earlier version of this fixture symlinked
+ * node_modules with no preceding .gitignore, so a later `git add -A` in a
+ * consuming test (baseline's own commit, for one) committed the symlink as
+ * an ordinary tracked entry, and the worktree inherited it for free. Note
+ * that the ignore line has NO trailing slash — `node_modules/` matches only
+ * a directory, and would not match a symlink of that name.
  */
 export async function makeBenchRepo({ slow = true } = {}) {
   const dir = await makeRepo({
+    '.gitignore': 'node_modules\n',
     'package.json': JSON.stringify({ name: 'demo', private: true, type: 'module' }, null, 2) + '\n',
     'src/wordcount.js': slow ? SLOW_WORDCOUNT : FAST_WORDCOUNT,
     'src/wordcount.test.js': WORDCOUNT_TEST,

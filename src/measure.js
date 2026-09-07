@@ -107,6 +107,7 @@ export async function measure(opts) {
           timeoutMs: opts.timeoutMs,
           env: opts.env,
           log: opts.log,
+          signal: opts.signal,
         }),
       )
     }

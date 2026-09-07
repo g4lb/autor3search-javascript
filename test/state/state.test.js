@@ -1,10 +1,11 @@
-import { mkdtemp, readFile, writeFile, mkdir } from 'node:fs/promises'
+import { lstat, mkdtemp, readFile, readlink, symlink, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   STATE_HOME_ENV,
   benchPattern,
+  linkNodeModules,
   loadBaseline,
   saveBaseline,
   stateDir,
@@ -117,6 +118,51 @@ describe('baseline persistence', () => {
     await expect(loadBaseline(join(home, 'missing.json'))).rejects.toThrow(/baseline/)
   })
 })
+
+describe('linkNodeModules', () => {
+  it('symlinks the repository node_modules into a worktree that has none', async () => {
+    await mkdir(join(repo, 'node_modules'), { recursive: true })
+    await writeFile(join(repo, 'node_modules', 'marker.txt'), 'x\n')
+    const worktree = await mktempDir()
+
+    await linkNodeModules(repo, worktree)
+
+    const stats = await lstat(join(worktree, 'node_modules'))
+    expect(stats.isSymbolicLink()).toBe(true)
+    expect(await readlink(join(worktree, 'node_modules'))).toBe(join(repo, 'node_modules'))
+    expect(await readFile(join(worktree, 'node_modules', 'marker.txt'), 'utf8')).toBe('x\n')
+  })
+
+  it('is a no-op when the repository has no node_modules', async () => {
+    const worktree = await mktempDir()
+    await expect(linkNodeModules(repo, worktree)).resolves.toBeUndefined()
+    await expect(lstat(join(worktree, 'node_modules'))).rejects.toThrow()
+  })
+
+  it('is a no-op when the worktree already has a node_modules', async () => {
+    await mkdir(join(repo, 'node_modules'), { recursive: true })
+    const worktree = await mktempDir()
+    await mkdir(join(worktree, 'node_modules'), { recursive: true })
+    await writeFile(join(worktree, 'node_modules', 'already-here.txt'), 'y\n')
+
+    await linkNodeModules(repo, worktree)
+
+    const stats = await lstat(join(worktree, 'node_modules'))
+    expect(stats.isSymbolicLink()).toBe(false) // untouched — still the real directory, not replaced
+    expect(await readFile(join(worktree, 'node_modules', 'already-here.txt'), 'utf8')).toBe('y\n')
+  })
+
+  it('never throws, even when the worktree directory does not exist yet', async () => {
+    await mkdir(join(repo, 'node_modules'), { recursive: true })
+    const missingWorktree = join(tmpdir(), 'a3s-does-not-exist-' + Math.random().toString(36).slice(2))
+    await expect(linkNodeModules(repo, missingWorktree)).resolves.toBeUndefined()
+  })
+})
+
+/** A fresh empty directory, standing in for a pinned worktree. */
+async function mktempDir() {
+  return mkdtemp(join(tmpdir(), 'a3s-worktree-'))
+}
 
 describe('benchPattern', () => {
   it('matches everything for an empty list', () => {

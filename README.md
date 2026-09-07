@@ -58,8 +58,13 @@ The rules that make this safe to leave running overnight, all of which
 restored before every `eval`. The agent may read them, may complain about
 them in its `-desc`, but cannot change what they check or what they measure.
 Everything the verdict depends on lives outside the repository the agent is
-editing, so nothing the agent does inside the repo can move the goalposts —
-except the one thing described under [Limitations](#limitations).
+editing. The scope gate also rejects dependency files and any Vitest/Vite
+config outright, because those are loaded by the bench runner itself — an
+ordinary, in-scope config file could otherwise redirect what a frozen
+benchmark imports, or stub out the code path it measures, without the frozen
+copy changing by one byte. That closes the config route specifically; it is
+not a claim that nothing else the agent does inside the repo can move the
+goalposts — see [Limitations](#limitations) for what is still open.
 
 ## Quick start
 
@@ -312,11 +317,17 @@ Stated here rather than left for you to discover:
   agent it's grading — so an agent that decided to, could in principle edit
   this package's own installed files. Out-of-tree state (the frozen copies,
   the baseline record, the pinned worktree, all living under the user
-  cache rather than the repository) still protects the metric from
-  anything the agent does *inside the repository being optimized*, which is
-  the threat that matters in almost every real run: an agent editing its
-  own tests, its own benchmarks, or the config that constrains it. But it
-  is a genuinely weaker guarantee than the Go tool's, and it is stated here
+  cache rather than the repository), together with rejecting dependency
+  files and known Vitest/Vite config filenames outright, protects the
+  metric from *most* of what the agent could do inside the repository being
+  optimized: editing its own tests or benchmarks, weakening the config that
+  constrains it, or redirecting the bench runner's import through a config
+  file. It does not close every such route — only the config filenames
+  Vitest 2.1.9 is known to load at the repository root are rejected, so a
+  bench runner reconfigured to load from somewhere else, a workspace-globbed
+  config in a subdirectory, or some other toolchain file this project has
+  not enumerated could still retarget what gets measured. This is a
+  genuinely weaker guarantee than the Go tool's, and it is stated here
   rather than left for you to find out the hard way.
 - **A narrow TOCTOU window exists in the freeze module.** `src/freeze.js`
   checks that a frozen path (and every directory on the way to it) is not a

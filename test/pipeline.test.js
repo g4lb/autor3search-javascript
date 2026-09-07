@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -79,6 +79,50 @@ describe('evalOnce — gates', () => {
     expect(result.reason).toBe(REASON.SCOPE)
   })
 
+  // C2: a committed vitest.config.js is an ordinary root file the default
+  // scope (["**"]) would otherwise admit, and Vitest loads it as part of
+  // `vitest bench --run` — so, unlike a frozen benchmark file, it is never
+  // restored. Before this rejection existed, a `resolve.alias` keyed off
+  // `process.argv.includes('bench')` could retarget a frozen benchmark's
+  // import to a stub with every other gate green and the frozen file itself
+  // untouched — proven end to end against the real Vitest binary during
+  // this fix's own verification, not just asserted here against the gate.
+  it('rejects a committed vitest.config.js regardless of scope', async () => {
+    const ctx = await setup({ scope: ['**'] })
+    await commitFiles(ctx.root, {
+      'vitest.config.js': `export default { resolve: { alias: process.argv.includes('bench') ? { './wordcount.js': './stub.js' } : {} } }\n`,
+    })
+    const { result } = await run(ctx)
+    expect(result.status).toBe(STATUS.FAIL)
+    expect(result.reason).toBe(REASON.SCOPE)
+    expect(result.message).toContain('vitest.config.js')
+  })
+
+  it('rejects a committed vite.config.ts regardless of scope', async () => {
+    const ctx = await setup({ scope: ['**'] })
+    await commitFiles(ctx.root, { 'vite.config.ts': 'export default {}\n' })
+    const { result } = await run(ctx)
+    expect(result.reason).toBe(REASON.SCOPE)
+    expect(result.message).toContain('vite.config.ts')
+  })
+
+  it('rejects a committed vitest.workspace.json regardless of scope', async () => {
+    const ctx = await setup({ scope: ['**'] })
+    await commitFiles(ctx.root, { 'vitest.workspace.json': '[]\n' })
+    const { result } = await run(ctx)
+    expect(result.reason).toBe(REASON.SCOPE)
+  })
+
+  // vitest.projects is an alternate name for vitest.workspace (verified
+  // against Vitest 2.1.9's own WORKSPACES_NAMES table) that is easy to miss
+  // if only the documented name is covered.
+  it('rejects a committed vitest.projects.js regardless of scope', async () => {
+    const ctx = await setup({ scope: ['**'] })
+    await commitFiles(ctx.root, { 'vitest.projects.js': 'export default []\n' })
+    const { result } = await run(ctx)
+    expect(result.reason).toBe(REASON.SCOPE)
+  })
+
   it('ignores harness-owned files in the scope gate', async () => {
     const ctx = await setup()
     await writeFiles(ctx.root, { 'results.tsv': 'x\n', [RUN_LOG_NAME]: 'y\n' })
@@ -121,6 +165,32 @@ describe('evalOnce — gates', () => {
     await commitFiles(ctx.root, { 'src/easier.bench.js': `import { bench } from 'vitest'\nbench('easy', () => {})\n` })
     const { result } = await run(ctx)
     expect(result.reason).toBe(REASON.NEW_TEST_FILE)
+  })
+
+  // I2: the REVERSE frozen-set integrity check (present vs. manifest). A
+  // plain rename of the directory holding a frozen file does NOT reach this
+  // branch: `freeze.restore` recreates the file at its exact manifest-recorded
+  // relative path via `mkdir(dirname(dst), {recursive:true})` regardless of
+  // what else moved, so the walk always finds it again there — verified
+  // directly against freeze.js/discover.js before writing this test, and it
+  // is why the leftover at the OLD location (still named *.test.js) trips
+  // NEW_TEST_FILE instead, one check earlier. The one way to actually hide a
+  // restored file from discover.js's walk (which enumerates via `readdir`, a
+  // read-permission operation) while leaving it byte-for-byte correct and
+  // reachable BY PATH (an exact lookup needs only execute permission) is to
+  // strip read permission from its directory — a real "structural change to
+  // the tree", and not one that shows up in `git diff` (permissions aren't
+  // part of a tracked change), so it does not interact with the scope gate.
+  it('fails when a frozen file is restored but its directory cannot be listed', async () => {
+    const ctx = await setup()
+    await chmod(join(ctx.root, 'src'), 0o111) // execute-only: lookup by path still works, readdir does not
+    try {
+      const { result } = await run(ctx)
+      expect(result.reason).toBe(REASON.MISSING_TEST_FILE)
+      expect(result.message).toMatch(/src\/wordcount\.(test|bench)\.js/)
+    } finally {
+      await chmod(join(ctx.root, 'src'), 0o755) // restore permissions so cleanup can remove the tree
+    }
   })
 
   it('fails when a frozen file was replaced by a symlink', async () => {
@@ -169,6 +239,42 @@ describe('evalOnce — gates', () => {
     const { result } = await run(ctx)
     expect(result.reason).toBe(REASON.BASELINE_TAMPERED)
   })
+
+  // I3: the scope gate deliberately diffs against `baseline.commit` (the
+  // FROZEN anchor recorded once at `baseline` time), never `measureCommit`
+  // (the pointer that advances past every KEEP) — see the long comment
+  // above the scope gate in src/pipeline.js. The existing scope tests above
+  // all run BEFORE any KEEP, when the two are numerically equal, so they
+  // cannot tell the two anchor choices apart. This test forces them apart:
+  // it commits an out-of-scope file, then advances measureCommit AND
+  // re-points the pinned worktree past that commit — exactly what
+  // `advanceMeasurementBaseline` does on a real KEEP — and asserts the
+  // out-of-scope file is STILL caught.
+  //
+  // Forcing a REAL KEEP here would mean depending on a genuine, statistically
+  // significant timing improvement clearing `alpha` on whatever machine runs
+  // the suite — exactly the noise the other measurement tests in this file
+  // already have to shrug off. Simulating the two effects a KEEP has
+  // (`baseline.measureCommit` and the worktree HEAD both moving to the new
+  // commit) gets the same anchor configuration deterministically, without
+  // needing FAST_WORDCOUNT to actually win a noisy race.
+  it('still reports a scope violation after the anchor advances past it, simulating a KEEP', async () => {
+    const ctx = await setup()
+    const oobCommit = await commitFiles(ctx.root, { 'outside/thing.js': 'export const x = 1\n' })
+
+    // Simulate the KEEP that would ordinarily have carried this commit past
+    // the "already accepted" line.
+    await gitx.checkoutDetached(join(ctx.stateDir, WORKTREE_NAME), oobCommit)
+    ctx.baseline.measureCommit = oobCommit
+
+    const { result } = await run(ctx)
+    // If the scope gate anchored on measureCommit instead, the diff against
+    // it would be empty (HEAD === measureCommit === oobCommit) and this
+    // would fall through to a real measurement instead of SCOPE.
+    expect(result.status).toBe(STATUS.FAIL)
+    expect(result.reason).toBe(REASON.SCOPE)
+    expect(result.message).toContain('outside/thing.js')
+  })
 })
 
 describe('evalOnce — measurement', () => {
@@ -181,22 +287,29 @@ describe('evalOnce — measurement', () => {
     expect(measurements.time[0].name).toMatch(/countWords/)
   })
 
-  it('advances the measurement commit and the pinned worktree on KEEP', async () => {
-    const ctx = await setup()
-    const newCommit = await commitFiles(ctx.root, { 'src/wordcount.js': FAST_WORDCOUNT })
-    const { result } = await run(ctx)
-    if (result.status !== STATUS.KEEP) return // a noisy machine may DISCARD; the gate below is what matters
-    expect(ctx.baseline.measureCommit).toBe(newCommit)
-    expect(await gitx.headCommit(join(ctx.stateDir, WORKTREE_NAME))).toBe(newCommit)
-  })
-
-  it('leaves the measurement commit alone on anything but KEEP', async () => {
+  // I3 (test hygiene): previously `return`ed with no assertion at all when
+  // the verdict came back other than expected — meaningless on a noisy
+  // runner, since the very case the test exists to catch (the pointer
+  // advancing when it should not, or vice versa) would then silently pass.
+  // Both branches now assert something either way: the pointer moves to the
+  // new commit on KEEP, and stays put otherwise — whichever the machine's
+  // noise level happens to produce this run.
+  it('advances the measurement commit and the pinned worktree on KEEP, and only on KEEP', async () => {
     const ctx = await setup()
     const before = ctx.baseline.measureCommit
-    await commitFiles(ctx.root, { 'src/wordcount.js': `${await readFile(join(ctx.root, 'src/wordcount.js'), 'utf8')}\n// comment\n` })
+    const newCommit = await commitFiles(ctx.root, { 'src/wordcount.js': FAST_WORDCOUNT })
     const { result } = await run(ctx)
-    if (result.status === STATUS.KEEP) return
-    expect(ctx.baseline.measureCommit).toBe(before)
+    const expected = result.status === STATUS.KEEP ? newCommit : before
+    expect(ctx.baseline.measureCommit).toBe(expected)
+    expect(await gitx.headCommit(join(ctx.stateDir, WORKTREE_NAME))).toBe(expected)
+  })
+
+  it('leaves the measurement commit alone on anything but KEEP (a no-op change rarely KEEPs; asserted either way)', async () => {
+    const ctx = await setup()
+    const before = ctx.baseline.measureCommit
+    const newCommit = await commitFiles(ctx.root, { 'src/wordcount.js': `${await readFile(join(ctx.root, 'src/wordcount.js'), 'utf8')}\n// comment\n` })
+    const { result } = await run(ctx)
+    expect(ctx.baseline.measureCommit).toBe(result.status === STATUS.KEEP ? newCommit : before)
   })
 
   it('never lets the bytes hint reach the scored deltas', async () => {

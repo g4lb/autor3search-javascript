@@ -19,6 +19,7 @@ import {
   BRANCH_PREFIX,
   WORKTREE_NAME,
   benchPattern,
+  linkNodeModules,
   saveBaseline,
   stateDir,
   validTag,
@@ -95,6 +96,10 @@ export async function runBaseline(args, io) {
     const worktree = join(dir, WORKTREE_NAME)
     await rm(worktree, { recursive: true, force: true })
     await gitx.addWorktree(root, worktree, commit)
+    // A worktree checks out only tracked files, and node_modules is normally
+    // gitignored — link it in so the pinned baseline side can resolve the
+    // bench runner at all. See linkNodeModules for why this lives here.
+    await linkNodeModules(root, worktree)
 
     await saveBaseline(join(dir, BASELINE_FILE), {
       tag,

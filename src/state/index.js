@@ -10,7 +10,7 @@
  * returns KEEP without optimizing anything.
  */
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises'
 import { homedir, platform } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 
@@ -116,6 +116,63 @@ function userCacheDir() {
   if (platform() === 'darwin') return join(homedir(), 'Library', 'Caches')
   if (platform() === 'win32') return process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local')
   return join(homedir(), '.cache')
+}
+
+/**
+ * Symlinks the repository's own `node_modules` into a pinned worktree, so a
+ * bench runner spawned inside it can resolve its own binary and the
+ * project's dependencies.
+ *
+ * Lives here, next to WORKTREE_NAME and the worktree-tamper check above,
+ * because this module is already the one concerned with the pinned
+ * worktree's identity and integrity — this is a third worktree-lifecycle
+ * concern, not a new one, even though (unlike the rest of this file) it
+ * touches the filesystem rather than a JSON record.
+ *
+ * A `git worktree add` checks out only TRACKED files, and virtually every
+ * real project gitignores `node_modules` — so a freshly created worktree
+ * has none, and the baseline side of every measurement would otherwise fail
+ * outright the moment the bench runner tries to resolve itself (see
+ * src/adapters/bench/vitest.js's `vitestBin`). Symlinking the real
+ * `node_modules` in is the fix: both worktree and repository root then
+ * resolve the exact same installed packages.
+ *
+ * No-op, and NEVER throws, when: the repository has no `node_modules` (a
+ * repo with no dependencies — nothing to link); the worktree already has an
+ * entry there (a previous call already linked it, or something else put a
+ * real install there — either way, leave it alone); or the link attempt
+ * itself fails for some other filesystem reason. Called from both
+ * `cmd-baseline.js` (right after the worktree is created) and
+ * `src/pipeline.js` (before every measurement), so a worktree that loses the
+ * link — the target moved, the link was removed — self-heals on the very
+ * next eval rather than failing every run after the first.
+ *
+ * @param {string} repoRoot
+ * @param {string} worktreeDir
+ * @returns {Promise<void>}
+ */
+export async function linkNodeModules(repoRoot, worktreeDir) {
+  const repoModules = join(repoRoot, 'node_modules')
+  const worktreeModules = join(worktreeDir, 'node_modules')
+  try {
+    await lstat(repoModules)
+  } catch {
+    return // the repository has no node_modules: nothing to link
+  }
+  try {
+    await lstat(worktreeModules)
+    return // the worktree already has an entry there: leave it alone
+  } catch {
+    // does not exist yet — fall through and create the link
+  }
+  try {
+    await symlink(repoModules, worktreeModules, 'dir')
+  } catch {
+    // Best-effort only. A transient permission or filesystem error here must
+    // not sink an experiment that may not even need node_modules (a repo
+    // that vendors its dependencies, for instance) — the bench runner will
+    // report its own, more specific failure if resolution still fails.
+  }
 }
 
 /**

@@ -37,7 +37,7 @@ export async function collectTasks(benchFile) {
  * benchmark. Returns an EMPTY set when the measurement is unavailable.
  *
  * @param {string} dir the worktree to measure
- * @param {{benchFiles: string[], benchmarks?: string[], iterations: number, timeoutMs: number, env?: object, log?: {write(s: string): void}}} opts
+ * @param {{benchFiles: string[], benchmarks?: string[], iterations: number, timeoutMs: number, env?: object, log?: {write(s: string): void}, signal?: AbortSignal}} opts
  * @returns {Promise<BenchSet>}
  */
 export async function measureHeap(dir, opts) {
@@ -51,6 +51,7 @@ export async function measureHeap(dir, opts) {
       timeoutMs: opts.timeoutMs,
       env: opts.env,
       execArgv: ['--expose-gc'],
+      signal: opts.signal,
     })
   } catch (err) {
     opts.log?.write(`heap hint unavailable, continuing without it: ${err.message}\n`)
@@ -156,17 +157,30 @@ function mainThreadFile(names, extension) {
   return (candidates.find((c) => c.threadId === '0') ?? candidates[0])?.name ?? null
 }
 
-/** Spawns the driver child and parses its single JSON object. */
+/**
+ * Spawns the driver child and parses its single JSON object.
+ *
+ * `options.signal`, when present, is threaded into the Runner that spawns
+ * the child — NOT into the JSON file the child itself reads. An AbortSignal
+ * is not data for driver-child.js (JSON.stringify would silently drop it
+ * anyway, since it carries no own enumerable properties), and without this
+ * split an abort during this call — Ctrl+C or `stop --force` during the
+ * heap-hint phase, most concretely — would never reach runner.run, leaving
+ * the `node --expose-gc` child running until its own timeout (15m by
+ * default) instead of being killed promptly, same as `Runner.onAbort`
+ * already does for every other subprocess this project spawns.
+ */
 async function invoke(dir, mode, options) {
+  const { signal, ...forChild } = options
   const scratch = await mkdtemp(join(tmpdir(), 'a3s-driver-'))
   const optionsPath = join(scratch, 'options.json')
   try {
-    await writeFile(optionsPath, JSON.stringify(options))
+    await writeFile(optionsPath, JSON.stringify(forChild))
     const runner = new Runner(dir, options.timeoutMs ?? 120_000, null)
     const result = await runner.run(
       process.execPath,
       [...(options.execArgv ?? []), CHILD, mode, optionsPath],
-      { env: options.env ?? process.env },
+      { env: options.env ?? process.env, signal },
     )
     if (result.stdout.trim() === '') {
       throw new Error(`driver produced no output (exit ${result.exitCode}):\n${result.tail(20)}`)
