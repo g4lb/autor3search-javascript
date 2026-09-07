@@ -22,11 +22,15 @@ export class Runner {
    * @param {string} dir working directory for every command
    * @param {number} timeoutMs bound on each command
    * @param {{write(s: string): void} | null} [log] receives the command line and its output
+   * @param {{killGraceMs?: number}} [opts] killGraceMs shortens the SIGTERM->SIGKILL
+   *   grace period; the default is right for production, and tests override it so the
+   *   escalation path can be covered without a ten-second wait.
    */
-  constructor(dir, timeoutMs, log = null) {
+  constructor(dir, timeoutMs, log = null, opts = {}) {
     this.dir = dir
     this.timeoutMs = timeoutMs
     this.log = log
+    this.killGraceMs = opts.killGraceMs ?? KILL_GRACE_MS
   }
 
   /**
@@ -60,7 +64,7 @@ export class Runner {
       const timer = setTimeout(() => {
         timedOut = true
         killGroup(child.pid, 'SIGTERM')
-        killTimer = setTimeout(() => killGroup(child.pid, 'SIGKILL'), KILL_GRACE_MS)
+        killTimer = setTimeout(() => killGroup(child.pid, 'SIGKILL'), this.killGraceMs)
         killTimer.unref()
       }, this.timeoutMs)
       timer.unref()

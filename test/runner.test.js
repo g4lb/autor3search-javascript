@@ -79,4 +79,64 @@ describe('Runner', () => {
   it('throws when the command cannot be started at all', async () => {
     await expect(new Runner(process.cwd(), 1000).run('definitely-not-a-command-xyz', [])).rejects.toThrow()
   })
+
+  it('escalates to SIGKILL when a child ignores SIGTERM', async () => {
+    // A child that swallows SIGTERM must not survive a timeout. Without the
+    // escalation it would run forever, and the harness would never notice.
+    const script = `
+      process.on('SIGTERM', () => {})
+      setInterval(() => {}, 1000)
+    `
+    const started = Date.now()
+    const r = await new Runner(process.cwd(), 300, null, { killGraceMs: 400 }).run(process.execPath, ['-e', script])
+    expect(r.timedOut).toBe(true)
+    expect(r.ok()).toBe(false)
+    // Timed out at 300ms, escalated at +400ms; well under the 10s production grace.
+    expect(Date.now() - started).toBeLessThan(5000)
+  })
+
+  it('kills the whole group when a child that ignores SIGTERM has a grandchild', async () => {
+    const script = `
+      const { spawn } = require('node:child_process')
+      const g = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+      process.stdout.write(String(g.pid))
+      process.on('SIGTERM', () => {})
+      setInterval(() => {}, 1000)
+    `
+    const r = await new Runner(process.cwd(), 300, null, { killGraceMs: 400 }).run(process.execPath, ['-e', script])
+    expect(r.timedOut).toBe(true)
+    const grandchild = Number(r.stdout.trim())
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(() => process.kill(grandchild, 0)).toThrow()
+  })
+
+  it('aborts a run through opts.signal and takes the group with it', async () => {
+    const controller = new AbortController()
+    const script = `
+      const { spawn } = require('node:child_process')
+      const g = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+      process.stdout.write(String(g.pid))
+      setInterval(() => {}, 1000)
+    `
+    const promise = new Runner(process.cwd(), 30_000, null).run(process.execPath, ['-e', script], {
+      signal: controller.signal,
+    })
+    setTimeout(() => controller.abort(), 300)
+    const r = await promise
+    expect(r.ok()).toBe(false)
+    const grandchild = Number(r.stdout.trim())
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(() => process.kill(grandchild, 0)).toThrow()
+  })
+
+  it('reports a signal-killed child as failed, never as success', async () => {
+    // Node gives exitCode null for a signal death; ok() must not read that as 0.
+    const r = await new Runner(process.cwd(), 300, null, { killGraceMs: 400 }).run(process.execPath, [
+      '-e',
+      'setInterval(() => {}, 1000)',
+    ])
+    expect(r.exitCode).not.toBe(0)
+    expect(r.exitCode).not.toBeNull()
+    expect(r.ok()).toBe(false)
+  })
 })
