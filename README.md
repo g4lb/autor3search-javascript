@@ -40,33 +40,79 @@ it looked if it is missing.
 
 ## Start here
 
-Paste this into your coding agent's context, in your repository, with
-`autor3search-javascript` installed (`npm i -g autor3search-javascript`, or
-prefix every command below with `npx`):
+Open your coding agent inside the JavaScript repository you want to make
+faster, and paste this:
 
-```
-Run these in order, stopping to check each one:
+```text
+Install and run autor3search-javascript on this repository, then optimize it.
 
-1. autor3search-javascript init
-2. Review .autor3search/config.yaml and program.md, then:
+Setup:
+1. npm install -g autor3search-javascript
+   Or prefix every command below with `npx` instead — either way, keep using
+   the same form for the whole run, so the version that recorded the baseline
+   is the version that scores against it.
+2. autor3search-javascript init
+   Show me the benchmarks it discovered. If it reports none, STOP and tell me:
+   this tool can only optimize what it can measure.
+3. Review .autor3search/config.yaml and program.md, then:
    git add -A && git commit -m "autor3search-javascript init"
-3. autor3search-javascript doctor
-4. autor3search-javascript baseline -tag <a short slug, e.g. today's date>
+4. autor3search-javascript doctor
+   Show me any warnings. If the machine looks unfit to measure, stop and ask
+   me before continuing.
+5. autor3search-javascript baseline -tag <today, e.g. sep7>
 
-Then read program.md in full and follow it exactly.
+Then:
+6. Read program.md in this repository, in full. It is your instruction set for
+   the rest of this run. Follow it exactly.
+
+Rules for the whole run:
+- One hypothesis per commit. Commit before each experiment, then run
+  `autor3search-javascript eval --json -desc "<idea>"` and apply its verdict
+  before touching anything else: KEEP means the commit stays; anything else
+  (DISCARD, FAIL, CRASH, ABORTED) means `git reset --hard HEAD~1`.
+- Never redirect eval's stdout into run.log. The harness already holds that
+  file open, and a second writer destroys the transcript you need when
+  something FAILs.
+- Never edit program.md, .autor3search/config.yaml, results.tsv, any
+  *.test.* / *.spec.* / *.bench.* file, package.json, a lockfile, or a
+  Vitest/Vite config file. They are not yours.
+- Never pass -force to any autor3search-javascript command. (I may run
+  `autor3search-javascript stop -force` myself; that one is mine, not yours.)
+- Print one context line before each experiment, so I can see where you are:
+  [exp <n> | <branch> | vs <measure_commit> | stop: autor3search-javascript stop]
+
+Run the loop until I stop you. I stop you by running
+`autor3search-javascript stop` in my own terminal — you will see it as
+"stop_requested": true in a verdict. When you do: apply that verdict, do not
+start another experiment, run `autor3search-javascript report`, summarize what
+you tried, and exit the loop.
 ```
 
-The rules that make this safe to leave running overnight, all of which
-`program.md` restates in force:
+That's the whole handoff. The agent installs the tool, discovers your
+benchmarks, freezes a baseline, and then follows `program.md` — generated for
+your repository by `init` — which tells it how to run the keep-or-discard loop.
+`program.md` names the benchmarks in scope, spells out the
+KEEP/DISCARD/FAIL/CRASH contract, lists everything the agent must never touch,
+and ends with a bank of generic V8/JavaScript performance ideas for when the
+agent is out of hypotheses.
 
-- Never edit `program.md`, `.autor3search/config.yaml`, or `results.tsv`.
-  They are how the harness stays honest about what it measured and why.
-- Never pass `--force` to anything.
-- One idea per experiment. Batching hides which change did what.
-- Commit before every `eval` — `eval` scores whatever is on disk against
-  whatever is at HEAD.
-- `KEEP` means the commit stays. Anything else (`DISCARD`, `FAIL`, `CRASH`,
-  `ABORTED`) means `git reset --hard HEAD~1`.
+What you get back: one commit per accepted change on a branch named
+`autor3search-javascript/<tag>`, and a `results.tsv` recording every experiment
+that was tried, including the ones that failed.
+`autor3search-javascript report` summarizes it.
+
+Two things worth knowing before you start it:
+
+- **It needs benchmarks.** This optimizes what it can measure, and refuses to
+  guess: `init` looks for Vitest `bench()` calls in `*.bench.*` files and
+  refuses outright when it finds none.
+- **Numbers are only as good as the machine.** Run `doctor` and read it. A
+  thermally throttled laptop on battery produces noise dressed as data, and a
+  JS runtime adds JIT tier-up and GC scheduling on top — see
+  [Limitations](#limitations) for how much.
+
+Everything past this point is for the human setting the run up, or for
+understanding what the agent in step 6 is actually bound by.
 
 ## The idea
 
