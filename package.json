@@ -1,15 +1,33 @@
 {
   "name": "autor3search-javascript",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Autonomous AI-driven performance optimization for any JavaScript repository",
   "type": "module",
   "license": "MIT",
   "author": "Gal Be <galevgi@gmail.com>",
-  "repository": { "type": "git", "url": "git+https://github.com/g4lb/autor3search-javascript.git" },
-  "keywords": ["benchmark", "performance", "optimization", "vitest", "ai-agent", "harness"],
-  "bin": { "autor3search-javascript": "bin/autor3search-javascript.js" },
-  "engines": { "node": ">=20" },
-  "files": ["bin", "src", "templates"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/g4lb/autor3search-javascript.git"
+  },
+  "keywords": [
+    "benchmark",
+    "performance",
+    "optimization",
+    "vitest",
+    "ai-agent",
+    "harness"
+  ],
+  "bin": {
+    "autor3search-javascript": "bin/autor3search-javascript.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates"
+  ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest"

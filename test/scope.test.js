@@ -35,14 +35,14 @@ describe('createMatcher', () => {
     expect(m.match('src/x.js')).toBe(true)
   })
 
-  it('accepts ./... as an alias for ** so a Go config still works', () => {
-    const m = createMatcher(['./...'])
-    expect(m.match('anything/at/all.js')).toBe(true)
-  })
-
-  it('accepts ./dir/... as an alias for dir/**', () => {
+  // Scope patterns are globs and nothing else. A "..." directory-prefix
+  // pattern borrowed from another toolchain is not translated into "**": it
+  // is handed to picomatch as the literal it is, so a pattern this harness
+  // does not understand widens scope to nothing rather than to everything.
+  it('does not treat a ... suffix as a wildcard', () => {
+    expect(createMatcher(['./...']).match('anything/at/all.js')).toBe(false)
     const m = createMatcher(['./src/...'])
-    expect(m.match('src/a/b.js')).toBe(true)
+    expect(m.match('src/a/b.js')).toBe(false)
     expect(m.match('lib/a.js')).toBe(false)
   })
 

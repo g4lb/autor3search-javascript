@@ -18,8 +18,8 @@ import { join } from 'node:path'
  * name, so `-C` works but `-tag` fails with "Unknown option '-t'" and `-desc`
  * with "Unknown option '-d'". This harness documents the single-dash spelling
  * throughout — program.md tells the agent to run `eval -desc "..."` and
- * `baseline -tag sep7`, matching the go tool it ports — so the tokens are
- * normalised here rather than changing a contract an agent already follows.
+ * `baseline -tag sep7` — so the tokens are normalised here rather than
+ * changing a contract an agent already follows.
  *
  * Only an exact whole-token match is rewritten, so a VALUE that happens to
  * look like a flag (`-desc "-tag is confusing"`) is left alone.
