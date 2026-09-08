@@ -13,6 +13,7 @@
  * SIGKILLed.
  */
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { ensureSecureDir } from './index.js'
 import { join } from 'node:path'
 
 export const LOCK_DIR = 'eval.lock'
@@ -32,7 +33,7 @@ export const STALE_AFTER_MS = 30_000
  * @throws {Error} when a live eval already holds the claim
  */
 export async function claimEval(stateDir, pid = process.pid) {
-  await mkdir(stateDir, { recursive: true })
+  await ensureSecureDir(stateDir)
   const lockPath = join(stateDir, LOCK_DIR)
 
   for (;;) {

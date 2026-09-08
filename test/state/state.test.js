@@ -1,10 +1,11 @@
-import { lstat, mkdtemp, readFile, readlink, symlink, writeFile, mkdir } from 'node:fs/promises'
+import { chmod, lstat, mkdtemp, readFile, readlink, stat, symlink, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   STATE_HOME_ENV,
   benchPattern,
+  ensureSecureDir,
   linkNodeModules,
   loadBaseline,
   saveBaseline,
@@ -178,5 +179,51 @@ describe('benchPattern', () => {
     // match benchmarks nobody selected.
     expect(new RegExp(benchPattern(['a.b'])).test('axb')).toBe(false)
     expect(new RegExp(benchPattern(['a.b'])).test('a.b')).toBe(true)
+  })
+})
+
+describe('ensureSecureDir', () => {
+  // The state home holds the frozen store and its manifest. Write access there
+  // is write access to what the score is measured against, so these tests are
+  // about that, not about tidiness.
+  const posix = typeof process.getuid === 'function'
+
+  it.skipIf(!posix)('creates the directory private to the current user', async () => {
+    const dir = await ensureSecureDir(await stateDir(repo, 'perms'))
+    expect((await stat(dir)).mode & 0o777).toBe(0o700)
+    expect((await stat(home)).mode & 0o777).toBe(0o700)
+  })
+
+  it.skipIf(!posix)('refuses a run directory other users can write', async () => {
+    const dir = await stateDir(repo, 'wide')
+    await ensureSecureDir(dir)
+    await chmod(dir, 0o777)
+    await expect(ensureSecureDir(dir)).rejects.toThrow(/mode 777 lets other users write/)
+  })
+
+  it.skipIf(!posix)('refuses when an ANCESTOR under the state home is writable', async () => {
+    // Owning the parent is enough to replace the child, so checking only the
+    // leaf would miss the case that matters: someone pre-creating the
+    // per-repository level and swapping the store underneath a 0700 run dir.
+    const dir = await stateDir(repo, 'ancestor')
+    await ensureSecureDir(dir)
+    await chmod(dirname(dir), 0o777)
+    await expect(ensureSecureDir(dir)).rejects.toThrow(/refusing to use/)
+    await chmod(dirname(dir), 0o700)
+    await expect(ensureSecureDir(dir)).resolves.toBe(dir)
+  })
+
+  it.skipIf(!posix)('names the offending directory and the command that fixes it', async () => {
+    const dir = await stateDir(repo, 'message')
+    await ensureSecureDir(dir)
+    await chmod(dir, 0o707)
+    await expect(ensureSecureDir(dir)).rejects.toThrow(new RegExp(`chmod 700 .*${'message'}`))
+  })
+
+  it.skipIf(!posix)('accepts a state home that merely SITS in a shared directory', async () => {
+    // A 0700 home inside a sticky /tmp is fine — mkdtemp puts every one of
+    // these tests there. Only levels at or below the home are checked.
+    const dir = await stateDir(repo, 'undertmp')
+    await expect(ensureSecureDir(dir)).resolves.toBe(dir)
   })
 })

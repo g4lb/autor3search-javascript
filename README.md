@@ -151,6 +151,18 @@ directory each command happened to be run from, and `eval` run from a
 subdirectory would then silently address different state than `stop` run from
 the repository root.
 
+Every directory the harness creates there is mode `0700`, and on POSIX systems
+each level from the state home down is checked before it is used: a directory
+owned by another user, or one that group or others can write, is refused with
+the `chmod` that fixes it. This matters because the frozen store and its
+manifest both live here — whoever can write to them can replace the benchmarks
+the score is measured against, consistently enough that the hash check still
+passes. Under the default cache location the parent already restricts access;
+the check is what makes `AUTOR3SEARCH_JAVASCRIPT_STATE_HOME` safe to point at a
+shared directory. Windows reports synthetic mode bits and has no owner to
+compare against, so the check is skipped there rather than made to look like it
+ran.
+
 ## Worked example
 
 `test/e2e.test.js` builds this exact scenario from

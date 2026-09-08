@@ -28,6 +28,18 @@ export const WORKTREE_NAME = 'baseline-worktree'
 export const BRANCH_PREFIX = 'autor3search-javascript/'
 
 /**
+ * Mode for every directory the harness creates under the state home.
+ *
+ * The state home holds the frozen store and its manifest — the two things the
+ * score is defined against — so it is the one place outside the repository
+ * where write access is equivalent to control of the verdict. Under the
+ * default home (~/Library/Caches, ~/.cache) the parent already restricts
+ * access, but AUTOR3SEARCH_JAVASCRIPT_STATE_HOME may point anywhere,
+ * including a shared directory.
+ */
+export const DIR_MODE = 0o700
+
+/**
  * The strict allow-list for a run tag: letters, digits, '.', '_' and '-'.
  *
  * Notably absent is '/' — or any other path separator — which alone blocks
@@ -173,6 +185,63 @@ export async function linkNodeModules(repoRoot, worktreeDir) {
     // that vendors its dependencies, for instance) — the bench runner will
     // report its own, more specific failure if resolution still fails.
   }
+}
+
+/**
+ * Creates a state directory and refuses to use one that other users can write.
+ *
+ * mkdir's `mode` applies only to directories it actually CREATES, so a
+ * directory that was already there keeps whatever owner and mode it had. That
+ * is the case worth checking: under a shared state home someone else can
+ * pre-create the run directory, and then swapping the frozen store and its
+ * manifest together — consistently, so the hash check still passes — puts
+ * their content into the test files that `restore` writes back before every
+ * evaluation.
+ *
+ * Every level from the state home down is checked, not just the leaf: owning
+ * the parent is enough to replace the child. Ancestors ABOVE the state home
+ * are deliberately not checked — a 0700 home inside a sticky /tmp is fine, and
+ * walking to / would fail on every ordinary machine.
+ *
+ * POSIX only. Windows reports synthetic mode bits and has no getuid, so the
+ * check is skipped there rather than made to look like it ran.
+ *
+ * @param {string} dir a directory at or below the state home
+ * @returns {Promise<string>} dir
+ */
+export async function ensureSecureDir(dir) {
+  await mkdir(dir, { recursive: true, mode: DIR_MODE })
+  if (typeof process.getuid !== 'function') return dir
+
+  // Walk up by path segment, never by string prefix: "/tmp/state" is a prefix
+  // of "/tmp/state-evil" but not its parent.
+  const home = resolve(await stateHome())
+  const levels = []
+  for (let cur = resolve(dir); ; cur = dirname(cur)) {
+    levels.push(cur)
+    if (cur === home || cur === dirname(cur)) break
+  }
+  // A caller that passed something outside the state home walked to the root
+  // instead of stopping at it; check only what it named.
+  if (levels[levels.length - 1] !== home) levels.length = 1
+
+  for (const level of levels) {
+    const st = await lstat(level)
+    if (st.uid !== process.getuid()) {
+      throw new Error(
+        `refusing to use ${level}: it is owned by uid ${st.uid}, not by you (uid ${process.getuid()}). ` +
+          `Whoever owns this directory controls the frozen benchmarks the score is measured against.`,
+      )
+    }
+    if ((st.mode & 0o022) !== 0) {
+      throw new Error(
+        `refusing to use ${level}: mode ${(st.mode & 0o777).toString(8)} lets other users write to it. ` +
+          `Whoever can write here can replace the frozen benchmarks the score is measured against. ` +
+          `Run: chmod 700 ${JSON.stringify(level)}`,
+      )
+    }
+  }
+  return dir
 }
 
 /**
