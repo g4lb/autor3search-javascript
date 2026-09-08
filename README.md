@@ -274,6 +274,26 @@ below 1 is faster. A `KEEP` requires **all** of:
    the chance that at least one shows a spurious "significant" improvement
    even when nothing changed — that is what the correction is for.
 
+## Platform support
+
+| | |
+|---|---|
+| **Linux** | supported — CI runs the full suite on Node 20 and 22 |
+| **macOS** | supported — CI runs the full suite on Node 20 and 22 |
+| **Windows** | **not supported** |
+
+On Windows 448 of 458 tests pass, so measurement itself works. What does not
+work is stopping: Node cannot deliver SIGINT to a child process group there
+the way it does on POSIX, so an interrupted `eval` never reaches the `ABORTED`
+path — it exits with a null code instead of 2 and can leave its claim behind.
+An unattended harness that cannot be reliably stopped is not something to be
+quiet about, so `doctor` says so on Windows rather than letting you find out
+at 3am. Two further failures are the test suite's own POSIX assumptions
+(a `chmod`-unreadable directory, and path separators) rather than product bugs.
+
+WSL reports as Linux and is unaffected. Node 20 or newer is required
+everywhere.
+
 ## Limitations
 
 Stated here rather than left for you to discover:
