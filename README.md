@@ -1,5 +1,9 @@
 # autor3search-javascript
 
+[![npm](https://img.shields.io/npm/v/autor3search-javascript)](https://www.npmjs.com/package/autor3search-javascript)
+[![node](https://img.shields.io/node/v/autor3search-javascript)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/autor3search-javascript)](LICENSE)
+
 An autonomous performance-optimization harness for JavaScript repositories. You
 point a coding agent at your repository, run four commands, hand the agent
 `program.md`, and go to sleep. The agent proposes one performance change at a
@@ -16,10 +20,28 @@ cannot game. What changed in the port is described in full in
 [Limitations](#limitations) below — most importantly, this harness is not a
 compiled binary.
 
+## Install
+
+```bash
+npm install -g autor3search-javascript
+```
+
+Or run it without installing anything, which is the better option when you
+want a specific version pinned for a run:
+
+```bash
+npx autor3search-javascript@0.1.0 doctor
+```
+
+Node 20 or newer. The harness measures with Vitest, so the repository you
+point it at needs `vitest` installed — `doctor` checks for it and says where
+it looked if it is missing.
+
 ## Start here
 
 Paste this into your coding agent's context, in your repository, with
-`autor3search-javascript` installed (`npm i -g autor3search-javascript`):
+`autor3search-javascript` installed (`npm i -g autor3search-javascript`, or
+prefix every command below with `npx`):
 
 ```
 Run these in order, stopping to check each one:
@@ -291,6 +313,10 @@ git push --follow-tags
 
 The tag triggers `.github/workflows/release.yml`, which refuses to publish if
 the tag and `package.json` disagree, and runs the full suite on Linux first.
+The OIDC path is confirmed working: a run against an already-published version
+authenticated and got as far as `cannot publish over the previously published
+versions`, which is the failure you want to see — it means the credential
+exchange succeeded and only the version was wrong.
 
 Two things to know if you are wiring this up on a fork or a new package:
 

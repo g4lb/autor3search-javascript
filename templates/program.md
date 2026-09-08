@@ -6,6 +6,11 @@ else (the metric, the gates, the verdict) belongs to the harness.
 
 ## Setup
 
+Every command below is written as `autor3search-javascript <cmd>`. If it is
+not on your PATH, prefix each one with `npx` — `npx autor3search-javascript
+status` — and keep using the same form for the whole run, so the version that
+recorded the baseline is the version that scores against it.
+
 Before starting the loop, do this once:
 
 1. Agree a run tag with the human if one was not already given (a short slug
