@@ -274,6 +274,33 @@ below 1 is faster. A `KEEP` requires **all** of:
    the chance that at least one shows a spurious "significant" improvement
    even when nothing changed — that is what the correction is for.
 
+## Releasing
+
+Publishing runs from GitHub Actions with npm **trusted publishing** (OIDC).
+There is no npm token in this repository, in its secrets, or on any
+maintainer's machine: npm mints a short-lived credential from GitHub's own
+identity for that one workflow run, and attaches a provenance attestation
+linking the published tarball to the commit and run that built it.
+
+To cut a release:
+
+```bash
+npm version patch    # or minor / major — commits and tags
+git push --follow-tags
+```
+
+The tag triggers `.github/workflows/release.yml`, which refuses to publish if
+the tag and `package.json` disagree, and runs the full suite on Linux first.
+
+Two things to know if you are wiring this up on a fork or a new package:
+
+- The trusted publisher on npmjs.com names the **workflow filename**, so
+  renaming `release.yml` breaks publishing until the setting is updated.
+- npm cannot publish a package's **first** version this way — a trusted
+  publisher can only be configured on a package that already exists
+  ([npm/cli#8544](https://github.com/npm/cli/issues/8544)). That one publish
+  needs a token; every release after it is token-free.
+
 ## Platform support
 
 | | |
