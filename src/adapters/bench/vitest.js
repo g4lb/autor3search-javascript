@@ -45,6 +45,12 @@ async function run(dir, opts) {
         // compare/outputJson/includeSamples.
         `--outputJson=${reportPath}`,
         `--root=${dir}`,
+        // Positional args are Vitest's FILENAME filter, which does work (the
+        // name filter does not). Narrowing to the files that hold the declared
+        // benchmarks is what keeps a round proportional to what was declared
+        // rather than to the size of the repository. Empty means no filter, so
+        // an undeclared run still measures everything.
+        ...(opts.benchFiles ?? []),
       ],
       { env: opts.env ?? process.env, signal: opts.signal },
     )

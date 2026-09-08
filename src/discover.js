@@ -87,6 +87,40 @@ export async function benchmarks(root) {
   return out
 }
 
+/**
+ * The bench FILES that contain any of the declared benchmarks.
+ *
+ * Vitest has no working name filter for benchmarks — `--testNamePattern` does
+ * not apply to them — so the declared set is selected after parsing, by
+ * BenchSet.selectByBase. Without this, every round runs every benchmark in the
+ * repository and throws almost all of it away: on a repository with 286 bench
+ * files and 1131 `bench()` calls, one round costs ~9 minutes instead of ~8
+ * seconds, and an eval needs fourteen of them.
+ *
+ * Filtering by FILE is safe where filtering by name is not, because it cannot
+ * change which benchmarks are scored — selectByBase still decides that. It
+ * only stops Vitest measuring benchmarks nothing will look at. The same list
+ * is used for both sides of the comparison, so the two sides stay identical.
+ *
+ * An empty `declared` means "every benchmark" and returns every bench file.
+ * A declared name matching nothing also returns [], which runs everything and
+ * lets selectByBase fail loudly naming what it could not match — the same
+ * behaviour as before this filter existed.
+ *
+ * @param {string} root
+ * @param {string[]} declared leaf benchmark names, as recorded at baseline
+ * @returns {Promise<string[]>} repo-relative paths, sorted
+ */
+export async function benchFilesFor(root, declared = []) {
+  if (declared.length === 0) return benchFiles(root)
+  const want = new Set(declared)
+  const files = new Set()
+  for (const b of await benchmarks(root)) {
+    if (want.has(b.name)) files.add(b.file)
+  }
+  return [...files].sort()
+}
+
 /** The leaf benchmark names, sorted and deduplicated. */
 export function baseNames(list) {
   return [...new Set(list.map((b) => b.name))].sort()

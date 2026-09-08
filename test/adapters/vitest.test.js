@@ -91,3 +91,27 @@ bench('countWords', () => { Math.sqrt(2) })
     expect(leftovers).toEqual([])
   })
 })
+
+describe('vitestRunner.run — benchFiles narrowing', () => {
+  // The decisive test is not a timing one. A second bench file that THROWS at
+  // import time makes the whole round fail if Vitest is allowed to collect it,
+  // and passes silently if the filter kept it out. That distinguishes "the
+  // filter works" from "the filter is ignored but the extra file was cheap".
+  const POISON = "throw new Error('this file must never be collected')\n"
+
+  it('does not collect a bench file outside the declared set', async () => {
+    const dir = await makeBenchRepo()
+    await writeFiles(dir, { 'src/poison.bench.js': POISON })
+    const set = await vitestRunner.run(dir, {
+      ...opts,
+      benchFiles: ['src/wordcount.bench.js'],
+    })
+    expect(set.bases()).toEqual(['countWords'])
+  })
+
+  it('DOES collect it when no files are named, proving the guard is the filter', async () => {
+    const dir = await makeBenchRepo()
+    await writeFiles(dir, { 'src/poison.bench.js': POISON })
+    await expect(vitestRunner.run(dir, opts)).rejects.toThrow()
+  })
+})
