@@ -51,21 +51,42 @@ export async function runEval(args, io) {
   const cfg = await loadRepoConfig(run.root)
   const baseline = await loadBaseline(join(run.stateDir, BASELINE_FILE))
 
-  let claim
-  try {
-    claim = await claimEval(run.stateDir)
-  } catch (err) {
-    io.err.write(`${err.message}\n`)
-    return 2
-  }
-
   // An interrupt must not leave Vitest workers running: the runner kills its
   // process groups, and this abort signal is what tells evalOnce's measure
   // phase to do it.
+  //
+  // Installed BEFORE the claim, and that order is load-bearing. claimEval
+  // creates the lock DIRECTORY first and writes its pid and heartbeat files
+  // afterwards, so a handler installed after it would leave a window in which
+  // the run already owns on-disk state while SIGINT still has Node's default
+  // action: the process dies outright, the `finally` below never runs, and the
+  // claim sits stranded until it goes stale ~30s later, refusing every eval in
+  // between. That window is also observable from outside — evalRunning reports
+  // `running` as soon as the directory exists — so anything waiting for the run
+  // to start could deliver the signal squarely into it.
+  //
+  // An interrupt arriving before there is anything to abort is harmless: the
+  // controller simply starts out aborted, and evalOnce stops at its first
+  // checkpoint without measuring anything.
   const controller = new AbortController()
   const onSignal = () => controller.abort()
   process.on('SIGINT', onSignal)
   process.on('SIGTERM', onSignal)
+  const offSignals = () => {
+    process.off('SIGINT', onSignal)
+    process.off('SIGTERM', onSignal)
+  }
+
+  let claim
+  try {
+    claim = await claimEval(run.stateDir)
+  } catch (err) {
+    // dispatch() also runs in-process under test, so a leaked listener here
+    // would accumulate across runs rather than dying with the process.
+    offSignals()
+    io.err.write(`${err.message}\n`)
+    return 2
+  }
 
   // The transcript goes to run.log by default; --no-log streams it to stdout
   // for a human watching interactively instead (never combined with --json,
@@ -128,8 +149,7 @@ export async function runEval(args, io) {
     }
     throw err
   } finally {
-    process.off('SIGINT', onSignal)
-    process.off('SIGTERM', onSignal)
+    offSignals()
     await closeLog(logStream)
     await claim.release()
   }
