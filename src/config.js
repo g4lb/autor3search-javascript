@@ -19,6 +19,9 @@ export const RUNNERS = ['vitest']
 /** Permitted values for each entry under `gates:`. */
 export const GATE_MODES = ['auto', 'on', 'off']
 
+/** The gates a config may name. Anything else under `gates:` is a typo. */
+export const GATE_NAMES = ['typecheck', 'lint', 'test']
+
 /**
  * The smallest `count` at which the exact Mann-Whitney test used by
  * src/bench/stats.js can ever report p < 0.05, however large or clean the
@@ -103,7 +106,21 @@ export async function loadConfig(path) {
     // `gates` merges rather than replaces, so a config setting one gate does
     // not silently drop the defaults for the other two.
     if (field === 'gates' && typeof value === 'object' && !Array.isArray(value)) {
-      Object.assign(cfg.gates, value)
+      // The same rule as above, one level down. `gates: {tests: "on"}` would
+      // otherwise merge a key nothing reads while `test` kept its default, so
+      // a user who asked for the test gate ON gets "auto" — which may skip the
+      // gate entirely — and the baseline hash locks that in for the whole run.
+      // Own keys only: a `__proto__` entry must be rejected, not walked into.
+      for (const name of Object.keys(value)) {
+        if (!GATE_NAMES.includes(name)) {
+          throw new Error(
+            `${path}: unknown gate ${JSON.stringify(name)} under 'gates' — known gates are: ${GATE_NAMES.join(', ')}`,
+          )
+        }
+      }
+      for (const name of GATE_NAMES) {
+        if (Object.hasOwn(value, name)) cfg.gates[name] = value[name]
+      }
       continue
     }
     cfg[field] = value
@@ -163,7 +180,7 @@ export function validate(c) {
   if (typeof c.heapHint !== 'boolean') {
     throw new Error('heap_hint must be true or false')
   }
-  for (const name of ['typecheck', 'lint', 'test']) {
+  for (const name of GATE_NAMES) {
     if (!GATE_MODES.includes(c.gates?.[name])) {
       throw new Error(`gates.${name} must be one of ${GATE_MODES.join(', ')}`)
     }
