@@ -2,7 +2,16 @@ import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { baseNames, benchFiles, benchmarks, frozenFiles, isBenchFile, isTestFile, testFiles } from '../src/discover.js'
+import {
+  baseNames,
+  benchFiles,
+  benchFilesFor,
+  benchmarks,
+  frozenFiles,
+  isBenchFile,
+  isTestFile,
+  testFiles,
+} from '../src/discover.js'
 import { writeFiles } from './helpers/repo.js'
 
 let dir
@@ -166,5 +175,51 @@ describe('frozenFiles', () => {
   it('classifies a .bench.test.js file once, as a test', async () => {
     await writeFiles(dir, { 'a.bench.test.js': '\n' })
     expect(await frozenFiles(dir)).toEqual(['a.bench.test.js'])
+  })
+})
+
+describe('benchFilesFor', () => {
+  // Vitest has no working benchmark NAME filter, so without this every round
+  // measures the whole repository and discards nearly all of it. The filter
+  // must narrow the work without ever narrowing what gets SCORED.
+  const repo = {
+    'a.bench.js': "import { bench } from 'vitest'\nbench('wanted', () => {})\n",
+    'b.bench.js': "import { bench } from 'vitest'\nbench('other', () => {})\n",
+    'nested/c.bench.js':
+      "import { bench, describe } from 'vitest'\ndescribe('grp', () => { bench('wanted', () => {}) })\n",
+  }
+
+  it('returns only the files holding a declared benchmark', async () => {
+    await writeFiles(dir, repo)
+    expect(await benchFilesFor(dir, ['wanted'])).toEqual(['a.bench.js', 'nested/c.bench.js'])
+  })
+
+  it('matches the LEAF name, exactly as selectByBase does', async () => {
+    // c.bench.js declares it as "grp > wanted"; the declared set records leaf
+    // names, so a filter keyed on the full path would silently drop the file
+    // and the benchmark would go unmeasured.
+    await writeFiles(dir, repo)
+    expect(await benchFilesFor(dir, ['wanted'])).toContain('nested/c.bench.js')
+  })
+
+  it('returns every bench file when nothing is declared', async () => {
+    await writeFiles(dir, repo)
+    expect(await benchFilesFor(dir, [])).toEqual(await benchFiles(dir))
+  })
+
+  it('returns nothing for a declared name that no longer exists', async () => {
+    // [] means "no filter" downstream, so the round runs everything and
+    // selectByBase fails loudly naming what it could not match — the same
+    // behaviour as before this filter existed, rather than a silent empty run.
+    await writeFiles(dir, repo)
+    expect(await benchFilesFor(dir, ['renamed-away'])).toEqual([])
+  })
+
+  it('does not pull in a file that merely mentions the name in prose', async () => {
+    await writeFiles(dir, {
+      ...repo,
+      'd.bench.js': "import { bench } from 'vitest'\n// wanted\nbench('unrelated', () => {})\n",
+    })
+    expect(await benchFilesFor(dir, ['wanted'])).not.toContain('d.bench.js')
   })
 })
