@@ -26,11 +26,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # registry-url is deliberately NOT set. It makes setup-node write an
+      # .npmrc containing `_authToken=${NODE_AUTH_TOKEN}`, and set
+      # NODE_AUTH_TOKEN to the literal placeholder "XXXXX-XXXXX-XXXXX-XXXXX"
+      # when no secret is passed — which there isn't, by design. npm then sees
+      # a configured credential, authenticates with that placeholder, and never
+      # attempts the OIDC exchange at all: the publish fails with a bare
+      # "404 Not Found - PUT", which reads like a missing package rather than
+      # the auth failure it is. npm publishes to registry.npmjs.org by default,
+      # so nothing is lost by leaving the registry unconfigured here.
       - uses: actions/setup-node@v4
         with:
           # Trusted publishing needs Node >= 22.14.0.
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
           cache: npm
 
       # setup-node ships the npm bundled with Node 22, which is 10.x — too old
@@ -59,6 +67,7 @@ jobs:
           fi
           echo "tag and package.json agree on $pkg"
 
-      # No NODE_AUTH_TOKEN. Provenance is automatic for a public package built
-      # from a public repository, so --provenance is not passed either.
+      # No NODE_AUTH_TOKEN, and no .npmrc: npm must find no credential in order
+      # to reach for the OIDC one. Provenance is automatic for a public package
+      # built from a public repository, so --provenance is not passed either.
       - run: npm publish --access public
