@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ['20', '22']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      # The suite spawns real git and Vitest subprocesses and measures real
+      # benchmarks, so it is slow by nature. A shared CI runner is also noisy,
+      # which is exactly why no test asserts that a KEEP must happen — only
+      # that the machinery reaches a verdict.
+      - run: npm test
+        env:
+          AUTOR3SEARCH_JAVASCRIPT_STATE_HOME: ${{ runner.temp }}/a3s-state

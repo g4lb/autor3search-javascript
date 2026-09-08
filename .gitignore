@@ -5,3 +5,4 @@ coverage/
 run.log
 results.tsv
 docs/
+.superpowers/
