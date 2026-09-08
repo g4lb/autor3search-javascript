@@ -51,6 +51,17 @@ describe('loadConfig', () => {
     expect(cfg.gates).toEqual({ typecheck: 'auto', lint: 'off', test: 'auto' })
   })
 
+  it('rejects a count above the round limit rather than running for days', async () => {
+    // timeout bounds each measurement process, not the run, so an extra zero
+    // does not fail — it just never finishes, unattended, overnight.
+    await expect(loadConfig(await write('count: 1000000000\n'))).rejects.toThrow(/above the 1000 round limit/)
+  })
+
+  it('accepts the round limit exactly', async () => {
+    const cfg = await loadConfig(await write('count: 1000\n'))
+    expect(cfg.count).toBe(1000)
+  })
+
   it('rejects a misspelled gate name instead of ignoring it', async () => {
     // `tests` is the plural typo a user makes when they mean `test`. Merged
     // blindly it lands as a key nothing reads, the real `test` gate stays at
