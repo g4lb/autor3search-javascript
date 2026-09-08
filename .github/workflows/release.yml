@@ -55,7 +55,17 @@ jobs:
 
       # A release that was never tested on the platform it ships from is a
       # release whose users are the test.
+      #
+      # The state home is overridden exactly as ci.yml does it, so this gate
+      # runs the suite under the conditions CI actually validated rather than
+      # subtly different ones. Every test already isolates its own state — via
+      # this variable or an explicit temp stateDir — so this is a safety net,
+      # not a requirement: should one ever forget, its state lands in the
+      # runner's temp and is cleaned up with the runner, instead of in the
+      # runner's real home cache where it would outlive the job.
       - run: npm test
+        env:
+          AUTOR3SEARCH_JAVASCRIPT_STATE_HOME: ${{ runner.temp }}/a3s-state
 
       # A tag that disagrees with package.json publishes a version nobody asked
       # for, under a name that says otherwise. Fail before the registry sees it.
