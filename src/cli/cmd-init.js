@@ -94,6 +94,8 @@ scope:
 
 # Measured rounds per side. Below 4 the significance test can never report
 # p < 0.05 however large the improvement, so every experiment would discard.
+# Capped at 1000: timeout bounds each measurement process, not the run, so a
+# stray zero here does not fail — it runs for days.
 count: ${d.count}
 
 # The largest tolerated significant regression, in percent.
