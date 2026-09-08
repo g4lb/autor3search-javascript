@@ -93,6 +93,9 @@ export async function measure(opts) {
   const roundFn = (dir) => async () => {
     const set = await runner.run(dir, {
       benchmarks: opts.benchmarks,
+      // The same file list both sides get, so neither is measured under a
+      // different workload than the other.
+      benchFiles: opts.benchFiles ?? [],
       timeoutMs: opts.timeoutMs,
       env: opts.env,
       log: opts.log,

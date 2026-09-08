@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import { CONFIG_PATH } from './config.js'
 import { UNIT_BYTES, UNIT_TIME } from './bench/set.js'
 import { compareAll, geoMean } from './bench/stats.js'
-import { benchFiles, frozenFiles } from './discover.js'
+import { benchFilesFor, frozenFiles } from './discover.js'
 import * as freeze from './freeze.js'
 import * as gitx from './gitx.js'
 import { measure } from './measure.js'
@@ -315,7 +315,7 @@ export async function evalOnce(o) {
       warmup: true,
       timeoutMs,
       heapHint: o.cfg.heapHint,
-      benchFiles: await benchFiles(o.root),
+      benchFiles: await benchFilesFor(o.root, o.baseline.benchmarks),
       log: o.log,
       signal: o.signal,
     }))
