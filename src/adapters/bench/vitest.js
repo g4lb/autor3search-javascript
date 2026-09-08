@@ -110,8 +110,17 @@ async function run(dir, opts) {
   }
 }
 
-/** The Vitest CLI entry point inside the measured repository. */
-function vitestBin(dir) {
+/**
+ * The Vitest CLI entry point inside the measured repository.
+ *
+ * Exported so `doctor` can check for the SAME file this actually spawns.
+ * A module resolution (`require.resolve('vitest/vitest.mjs')`) is not
+ * equivalent: it honours the package's `exports` map, and Vitest 2 has a
+ * `./*` wildcard there while Vitest 3 and 4 do not — so the resolution
+ * reports "not installed" on a repository where this path exists and
+ * measurement works.
+ */
+export function vitestBin(dir) {
   return join(dir, 'node_modules', 'vitest', 'vitest.mjs')
 }
 

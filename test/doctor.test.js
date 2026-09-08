@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { SEVERITY, check } from '../src/doctor.js'
 import { runCli } from './helpers/cli.js'
 import { makeBenchRepo } from './helpers/bench-repo.js'
-import { makeRepo } from './helpers/repo.js'
+import { makeRepo, writeFiles } from './helpers/repo.js'
 
 const named = (findings, name) => findings.find((f) => f.name === name)
 
@@ -59,6 +59,26 @@ describe('check', () => {
 
   it('never throws on a platform it does not know', async () => {
     await expect(check(await makeRepo())).resolves.toBeInstanceOf(Array)
+  })
+
+  it('reports vitest as OK on a Vitest 3/4 layout, where the exports map has no wildcard', async () => {
+    // Vitest 2 exposes "./*" in its package exports, so require.resolve of the
+    // deep path 'vitest/vitest.mjs' succeeded. Vitest 3 and 4 dropped that
+    // wildcard, and the resolution then throws ERR_PACKAGE_PATH_NOT_EXPORTED —
+    // so doctor answered "vitest is not installed here" for every Vitest 3/4
+    // repository, while measurement worked fine because the adapter spawns the
+    // file by path. Confirmed live against vitest 4.1.11 and es-toolkit's
+    // 4.1.10 before this was written.
+    const dir = await makeRepo()
+    await writeFiles(dir, {
+      'node_modules/vitest/package.json': JSON.stringify({
+        name: 'vitest',
+        version: '4.1.11',
+        exports: { '.': './index.js', './node': './dist/node.js' },
+      }),
+      'node_modules/vitest/vitest.mjs': '// CLI entry point\n',
+    })
+    expect(named(await check(dir), 'vitest').severity).toBe(SEVERITY.OK)
   })
 
   it('reports vitest correctly when -C is a relative path', async () => {

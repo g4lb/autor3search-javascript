@@ -7,12 +7,12 @@
  * the harness's, so doctor reports and never blocks.
  */
 import { execFile } from 'node:child_process'
-import { readFile, statfs } from 'node:fs/promises'
+import { readFile, stat, statfs } from 'node:fs/promises'
 import { cpus, loadavg, platform } from 'node:os'
 import { resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 import * as gitx from './gitx.js'
-import { resolveFrom } from './adapters/gates/util.js'
+import { vitestBin } from './adapters/bench/vitest.js'
 
 const exec = promisify(execFile)
 
@@ -29,13 +29,11 @@ const MIN_NODE_MAJOR = 20
  * @returns {Promise<{name: string, detail: string, severity: number}[]>}
  */
 export async function check(dir) {
-  // resolveFrom's createRequire rejects a relative filename outright ("must
-  // be a file URL object, file URL string, or absolute path string"), and
-  // `-C` defaults to '.' — so without this, the ordinary `doctor` invocation
-  // with no flag (or any relative -C) would silently report vitest as
-  // missing even when it is installed, because the require() throws and
-  // resolveFrom's catch turns that into null. Resolving once, up front,
-  // keeps every check consistent regardless of what the caller passed.
+  // `-C` defaults to '.', so every check is given an ABSOLUTE directory once,
+  // up front: the git checks shell out with it as cwd, the disk check statfs's
+  // it, and the vitest check reports the path it looked in — a relative one
+  // would make that message meaningless. Resolving here keeps every check
+  // consistent regardless of what the caller passed.
   const absDir = resolvePath(dir)
 
   const platformCheck =
@@ -119,11 +117,23 @@ function checkLoad() {
  * because the harness happens to depend on it for its own tests.
  */
 async function checkVitest(dir) {
-  return resolveFrom(dir, 'vitest/vitest.mjs')
+  // Check the exact file the adapter spawns, not a module resolution of it.
+  // require.resolve('vitest/vitest.mjs') honours the package `exports` map,
+  // and Vitest 2 exposes a `./*` wildcard there while Vitest 3 and 4 do not —
+  // so the resolution answered "not installed" for every Vitest 3/4 repository
+  // even though the file is present and benchmarks measure fine. doctor exists
+  // to predict whether measurement will work, so it must ask what measurement
+  // asks.
+  const bin = vitestBin(dir)
+  const present = await stat(bin).then(
+    (st) => st.isFile(),
+    () => false,
+  )
+  return present
     ? { name: 'vitest', detail: 'vitest resolves in this repository', severity: SEVERITY.OK }
     : {
         name: 'vitest',
-        detail: 'vitest is not installed here — benchmarks cannot be measured until it is',
+        detail: `vitest is not installed here — benchmarks cannot be measured until it is (looked for ${bin})`,
         severity: SEVERITY.WARN,
       }
 }
