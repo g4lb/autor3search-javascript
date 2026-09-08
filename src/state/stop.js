@@ -9,7 +9,8 @@
  * the state directory is derived from the repository path and run tag, not
  * from anything either process holds privately.
  */
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
+import { rm, stat, writeFile } from 'node:fs/promises'
+import { ensureSecureDir } from './index.js'
 import { join } from 'node:path'
 
 /**
@@ -29,7 +30,7 @@ export const STOP_REQUEST_FILE = 'stop.request'
  * simply sits there until a run reads it, or clearStop removes it.
  */
 export async function requestStop(stateDir) {
-  await mkdir(stateDir, { recursive: true })
+  await ensureSecureDir(stateDir)
   await writeFile(join(stateDir, STOP_REQUEST_FILE), 'stop requested\n')
 }
 

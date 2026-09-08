@@ -6,7 +6,7 @@
  * directory — see src/state/index.js for why.
  */
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, rm } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { CONFIG_PATH } from '../config.js'
@@ -19,6 +19,7 @@ import {
   BRANCH_PREFIX,
   WORKTREE_NAME,
   benchPattern,
+  ensureSecureDir,
   linkNodeModules,
   saveBaseline,
   stateDir,
@@ -84,8 +85,7 @@ export async function runBaseline(args, io) {
   // From here on, any failure must undo the branch, or a retry under the same
   // tag is permanently blocked by a branch nothing finished creating.
   try {
-    const dir = await stateDir(root, tag)
-    await mkdir(dir, { recursive: true })
+    const dir = await ensureSecureDir(await stateDir(root, tag))
 
     const declared = cfg.benchmarks.length > 0 ? cfg.benchmarks : baseNames(found)
     const toFreeze = await frozenFiles(root, cfg.unfreeze)

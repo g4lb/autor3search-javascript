@@ -32,6 +32,19 @@ export const GATE_NAMES = ['typecheck', 'lint', 'test']
  */
 export const MIN_COUNT = 4
 
+/**
+ * The largest `count` a config may ask for.
+ *
+ * Not a statistical limit — past a few dozen rounds per side the estimate has
+ * long stopped moving. It is a typo guard. `timeout` bounds each child process,
+ * not the run, so an extra zero does not fail: it quietly turns an overnight
+ * run into one that never finishes, and unattended is exactly how this tool is
+ * meant to be used. 1000 rounds per side is already 2000+ measurement
+ * processes and hours of wall clock, so a legitimate run stays well under it
+ * while `10000` or `1000000` stops at the config instead of at dawn.
+ */
+export const MAX_COUNT = 1000
+
 /** Returns the configuration used when a field is omitted. */
 export function defaultConfig() {
   return {
@@ -147,6 +160,14 @@ export function validate(c) {
       `count must be at least ${MIN_COUNT}: the significance test cannot report p < 0.05 with fewer ` +
         `than ${MIN_COUNT} measured rounds per side no matter how large the improvement is, so every ` +
         `experiment would be discarded regardless of what changed (the default is 10)`,
+    )
+  }
+  if (c.count > MAX_COUNT) {
+    throw new Error(
+      `count ${c.count} is above the ${MAX_COUNT} round limit: timeout bounds each measurement process, ` +
+        `not the run, so a count this high does not fail — it runs for hours or days without finishing. ` +
+        `If you really want more than ${MAX_COUNT} rounds per side, raise MAX_COUNT deliberately ` +
+        `(the default is 10, and the estimate stops moving well before 100)`,
     )
   }
   if (typeof c.maxRegressPct !== 'number' || c.maxRegressPct < 0) {
