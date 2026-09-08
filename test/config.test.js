@@ -51,6 +51,38 @@ describe('loadConfig', () => {
     expect(cfg.gates).toEqual({ typecheck: 'auto', lint: 'off', test: 'auto' })
   })
 
+  it('rejects a misspelled gate name instead of ignoring it', async () => {
+    // `tests` is the plural typo a user makes when they mean `test`. Merged
+    // blindly it lands as a key nothing reads, the real `test` gate stays at
+    // "auto" — which may skip the gate altogether — and the baseline hash
+    // locks that in for the whole unattended run. Same failure as an unknown
+    // top-level setting, one level down, so it fails the same way.
+    await expect(loadConfig(await write('gates:\n  tests: "on"\n'))).rejects.toThrow(
+      /unknown gate "tests" under 'gates' — known gates are: typecheck, lint, test/,
+    )
+  })
+
+  it('names every legal gate when it rejects an unknown one', async () => {
+    await expect(loadConfig(await write('gates:\n  typecheeck: "on"\n'))).rejects.toThrow(
+      /typecheck, lint, test/,
+    )
+  })
+
+  it('does not let a gates entry reach the prototype of the merged object', async () => {
+    // Object.assign uses [[Set]], so a `__proto__` entry under `gates:` would
+    // invoke the inherited setter and swap the prototype of cfg.gates rather
+    // than land as a key. Object.prototype itself was never reachable, but the
+    // merged object must stay an ordinary object.
+    const load = loadConfig(await write('gates:\n  __proto__:\n    polluted: true\n'))
+    await expect(load).rejects.toThrow(/unknown gate/)
+    expect({}.polluted).toBeUndefined()
+  })
+
+  it('still accepts every legal gate name and mode', async () => {
+    const cfg = await loadConfig(await write('gates:\n  typecheck: "on"\n  lint: off\n  test: auto\n'))
+    expect(cfg.gates).toEqual({ typecheck: 'on', lint: 'off', test: 'auto' })
+  })
+
   it('reports the path when the file does not parse', async () => {
     await expect(loadConfig(await write('count: [unclosed\n'))).rejects.toThrow(/config\.yaml/)
   })
