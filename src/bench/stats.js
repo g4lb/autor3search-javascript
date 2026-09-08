@@ -1,6 +1,7 @@
 /**
- * The statistics behind every verdict — a hand port of the subset of
- * golang.org/x/perf/benchmath that autor3search-go used.
+ * The statistics behind every verdict. The estimators follow the method
+ * described by golang.org/x/perf/benchmath, implemented here directly; that
+ * package is cited for the method, not depended on.
  *
  * The estimator is deliberately distribution-free ("assume nothing"):
  * benchmark timings are not normal, they are right-skewed with occasional

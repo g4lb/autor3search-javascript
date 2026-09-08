@@ -12,13 +12,14 @@ baseline, and returns a verdict — `KEEP` or `DISCARD` — that the agent canno
 argue with, weaken, or reinterpret. In the morning `report` tells you what
 happened.
 
-This is a port of [`autor3search-go`](https://github.com/g4lb/autor3search-go),
-which is itself a descendant of karpathy/autoresearch. The discipline is
-carried across deliberately: frozen tests, out-of-tree state, interleaved A/B
+A standalone JavaScript tool: it discovers Vitest benchmarks, measures them,
+and decides. It needs nothing but Node and the repository you point it at.
+The discipline it enforces — frozen tests, out-of-tree state, interleaved A/B
 measurement, an honest significance test, and a single scalar the agent
-cannot game. What changed in the port is described in full in
-[Limitations](#limitations) below — most importantly, this harness is not a
-compiled binary.
+cannot game — comes from the autoresearch line of harnesses, and is
+implemented here from scratch for the JavaScript toolchain. What that
+toolchain can and cannot guarantee is stated in full in
+[Limitations](#limitations) below.
 
 ## Install
 
@@ -30,7 +31,7 @@ Or run it without installing anything, which is the better option when you
 want a specific version pinned for a run:
 
 ```bash
-npx autor3search-javascript@0.1.0 doctor
+npx autor3search-javascript@0.1.1 doctor
 ```
 
 Node 20 or newer. The harness measures with Vitest, so the repository you
@@ -389,18 +390,17 @@ Stated here rather than left for you to discover:
   silently omitted from the eval output rather than failing the run — a
   hint that couldn't be measured must never fail a real, correctly-measured
   experiment. It exists to point at allocation-heavy code, nothing more.
-- **There is no `benchtime` setting.** Coming from the Go tool, you will
-  look for one. Vitest exposes no global "run this benchmark for N seconds"
-  option, so per-benchmark duration lives in the `bench()` call itself (via
+- **There is no `benchtime` setting.** Vitest exposes no global "run this
+  benchmark for N seconds" option, so per-benchmark duration lives in the
+  `bench()` call itself (via
   Vitest's own `time`/`iterations` options in the bench file), not in
   `.autor3search/config.yaml`. `count` controls how many measured rounds
   the harness runs, not how long any one of them takes.
-- **This harness is not a compiled binary.** The Go original leans partly on
-  being one: the agent it constrains cannot edit the tool measuring it,
-  because it isn't source the agent can reach. This harness is an
-  npm-installed JavaScript program, running as the same OS user as the
-  agent it's grading — so an agent that decided to, could in principle edit
-  this package's own installed files. Out-of-tree state (the frozen copies,
+- **This harness is not a compiled binary.** It is an npm-installed
+  JavaScript program, running as the same OS user as the agent it's grading
+  — so an agent that decided to, could in principle edit this package's own
+  installed files. A harness the agent cannot reach at all would not have
+  that hole; this one has to close it by other means. Out-of-tree state (the frozen copies,
   the baseline record, the pinned worktree, all living under the user
   cache rather than the repository), together with rejecting dependency
   files and known Vitest/Vite config filenames outright, protects the
@@ -411,9 +411,8 @@ Stated here rather than left for you to discover:
   Vitest 2.1.9 is known to load at the repository root are rejected, so a
   bench runner reconfigured to load from somewhere else, a workspace-globbed
   config in a subdirectory, or some other toolchain file this project has
-  not enumerated could still retarget what gets measured. This is a
-  genuinely weaker guarantee than the Go tool's, and it is stated here
-  rather than left for you to find out the hard way.
+  not enumerated could still retarget what gets measured. That residual gap
+  is stated here rather than left for you to find out the hard way.
 - **A narrow TOCTOU window exists in the freeze module.** `src/freeze.js`
   checks that a frozen path (and every directory on the way to it) is not a
   symlink or hard link, then reads or writes it. Between that check and the

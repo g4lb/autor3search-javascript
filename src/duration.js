@@ -1,8 +1,8 @@
 /**
- * Go-style duration parsing, used for `timeout` in the run configuration.
- * Values are written the way `go test -benchtime` accepts them ("1s",
- * "500ms", "15m") so a user moving between the Go and JavaScript harnesses
- * does not have to relearn the format.
+ * Duration parsing, used for `timeout` in the run configuration. Values are
+ * written as a number and a unit ("1s", "500ms", "15m"), optionally
+ * compounded ("1m30s") — the notation most performance tooling already uses,
+ * so there is nothing new to learn here.
  */
 
 /** Milliseconds per unit. */

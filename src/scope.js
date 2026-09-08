@@ -1,10 +1,10 @@
 /**
  * Decides which files an agent is allowed to modify.
  *
- * Patterns are globs ("src/**", "lib/**\/*.js"). The Go harness used the go
- * tool's "./..." directory-prefix form; that form is accepted here as an
- * alias so a configuration can be carried across, but globs are the
- * documented shape because they are what a JavaScript project expects.
+ * Patterns are globs ("src/**", "lib/**\/*.js") — the shape a JavaScript
+ * project already expects, and the only shape accepted. A leading "./" is
+ * tolerated; anything else is handed to picomatch verbatim, so a pattern
+ * this harness does not understand matches nothing rather than more.
  */
 import picomatch from 'picomatch'
 
@@ -35,8 +35,7 @@ export function createMatcher(patterns) {
     // also match dot-files and dot-directories, so an agent scoped to the
     // whole repository could write .npmrc (redirecting the package registry)
     // or .github/workflows/*.yml (arbitrary CI execution) and have the change
-    // accepted. The go tool this ports from ignores dot-directories for the
-    // same reason. A user who genuinely wants one in scope names it
+    // accepted. A user who genuinely wants one in scope names it
     // explicitly — picomatch still matches a literal dot written in the
     // pattern, so `scope: [".github/**"]` works while `**` does not reach it.
     compiled.push(picomatch(normalisePattern(trimmed)))
@@ -52,14 +51,12 @@ export function createMatcher(patterns) {
 }
 
 /**
- * Rewrites a pattern into the glob picomatch will see: strips a leading
- * "./", and translates the go-tool "..." suffix into "**".
+ * Rewrites a pattern into the glob picomatch will see: normalises backslashes
+ * and strips a leading "./". Nothing else is rewritten — a pattern means what
+ * picomatch says it means, with no dialect of this project's own on top.
  */
 function normalisePattern(p) {
-  let out = p.replace(/\\/g, '/').replace(/^\.\//, '')
-  if (out === '...') return '**'
-  if (out.endsWith('/...')) return `${out.slice(0, -'/...'.length)}/**`
-  return out
+  return p.replace(/\\/g, '/').replace(/^\.\//, '')
 }
 
 /**

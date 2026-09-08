@@ -43,11 +43,11 @@ export async function testFiles(root) {
 /**
  * Every file that must be frozen at baseline: tests AND benchmarks.
  *
- * Freezing the benchmarks is not optional and is the main way this differs
- * from the Go harness. In Go a benchmark is a function inside a _test.go
- * file, so freezing tests froze the metric for free. Here the benchmark lives
- * in its own file — freeze only the tests and an agent can rewrite the
- * benchmark to measure something easier, with every other gate still passing.
+ * Freezing the benchmarks is not optional. In Vitest a benchmark lives in its
+ * own `*.bench.*` file, separate from the tests — so freezing only the tests
+ * would leave the metric itself editable, and an agent could rewrite the
+ * benchmark to measure something easier with every other gate still passing.
+ * Tests protect correctness; freezing the bench files protects the number.
  *
  * @param {string} root
  * @param {string[]} [exclude] repo-relative paths deliberately left unfrozen
