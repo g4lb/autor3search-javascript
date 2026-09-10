@@ -7,7 +7,7 @@
   "author": "Gal Be <galevgi@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/g4lb/autor3search-javascript.git"
+    "url": "git+https://github.com/autor3search/javascript.git"
   },
   "keywords": [
     "benchmark",
