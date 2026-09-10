@@ -1,8 +1,8 @@
 # autor3search-javascript
 
-[![npm](https://img.shields.io/npm/v/autor3search-javascript)](https://www.npmjs.com/package/autor3search-javascript)
-[![node](https://img.shields.io/node/v/autor3search-javascript)](https://nodejs.org)
-[![license](https://img.shields.io/npm/l/autor3search-javascript)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@autor3search/javascript)](https://www.npmjs.com/package/@autor3search/javascript)
+[![node](https://img.shields.io/node/v/@autor3search/javascript)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/@autor3search/javascript)](LICENSE)
 
 An autonomous performance-optimization harness for JavaScript repositories. You
 point a coding agent at your repository, run four commands, hand the agent
@@ -24,14 +24,14 @@ toolchain can and cannot guarantee is stated in full in
 ## Install
 
 ```bash
-npm install -g autor3search-javascript
+npm install -g @autor3search/javascript
 ```
 
 Or run it without installing anything, which is the better option when you
 want a specific version pinned for a run:
 
 ```bash
-npx autor3search-javascript@0.1.3 doctor
+npx @autor3search/javascript@0.2.0 doctor
 ```
 
 Node 20 or newer. The harness measures with Vitest, so the repository you
@@ -47,7 +47,7 @@ faster, and paste this:
 Install and run autor3search-javascript on this repository, then optimize it.
 
 Setup:
-1. npm install -g autor3search-javascript
+1. npm install -g @autor3search/javascript
    Or prefix every command below with `npx` instead — either way, keep using
    the same form for the whole run, so the version that recorded the baseline
    is the version that scores against it.
