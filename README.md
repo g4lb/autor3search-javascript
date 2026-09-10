@@ -382,7 +382,7 @@ Two things to know if you are wiring this up on a fork or a new package:
 | **macOS** | supported — CI runs the full suite on Node 20 and 22 |
 | **Windows** | **not supported** |
 
-On Windows 448 of 458 tests pass, so measurement itself works. What does not
+On Windows nearly the whole suite passes, so measurement itself works. What does not
 work is stopping: Node cannot deliver SIGINT to a child process group there
 the way it does on POSIX, so an interrupted `eval` never reaches the `ABORTED`
 path — it exits with a null code instead of 2 and can leave its claim behind.
