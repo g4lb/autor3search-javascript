@@ -33,7 +33,7 @@ Or run it without installing anything, which is the better option when you
 want a specific version pinned for a run:
 
 ```bash
-npx @autor3search/javascript@0.2.0 doctor
+npx @autor3search/javascript@0.2.1 doctor
 ```
 
 Node 20 or newer. The harness measures with Vitest, so the repository you
