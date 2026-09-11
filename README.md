@@ -4,6 +4,8 @@
 [![node](https://img.shields.io/node/v/@autor3search/javascript)](https://nodejs.org)
 [![license](https://img.shields.io/npm/l/@autor3search/javascript)](LICENSE)
 
+[autoresearch for your codebase](https://autor3search.dev/) — the same loop in seven languages, with every agent prompt in one place.
+
 An autonomous performance-optimization harness for JavaScript repositories. You
 point a coding agent at your repository, run four commands, hand the agent
 `program.md`, and go to sleep. The agent proposes one performance change at a
