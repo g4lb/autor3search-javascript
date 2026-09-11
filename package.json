@@ -9,7 +9,9 @@
     "type": "git",
     "url": "git+https://github.com/autor3search/javascript.git"
   },
+  "homepage": "https://autor3search.dev",
   "keywords": [
+    "autoresearch",
     "benchmark",
     "performance",
     "optimization",
@@ -40,7 +42,6 @@
   "devDependencies": {
     "vitest": "^2.1.0"
   },
-  "homepage": "https://github.com/autor3search/javascript#readme",
   "bugs": {
     "url": "https://github.com/autor3search/javascript/issues"
   },
